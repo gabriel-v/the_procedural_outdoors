@@ -1,0 +1,6 @@
+#!/bin/bash -x
+
+fusermount -zu /run/user/1000/gvfs/
+pkill gvfsd-fuse
+/usr/lib/gvfs/gvfsd-fuse -o allow_root /run/user/1000/gvfs/
+mount | grep gvfs
