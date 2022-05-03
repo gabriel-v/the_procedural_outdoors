@@ -2,13 +2,15 @@
 
 # docker pull gabrielv/kubruntu:blender312
 DOCKER_IMAGE=gabrielv/stanley:blender312
+MEM=8g
 
 docker build . --tag $DOCKER_IMAGE
 
 docker run --rm -it  \
+           -m $MEM --memory-swap=$MEM \
            --user $(id -u):$(id -g) \
            --volume "$(pwd):/app" \
            --mount type=bind,source=/run/user/1000/gvfs/sftp:host=kowalski/data-nas/licenta-2022,destination=/data,ro \
            -w /app \
            $DOCKER_IMAGE \
-           time $@
+           $@
