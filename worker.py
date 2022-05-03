@@ -14,6 +14,7 @@ logging.basicConfig(level="INFO")
 log = logging.getLogger(__name__)
 
 MAX_FRAMES = 12
+RESOLUTION_X = 333
 
 
 def save_blend():
@@ -107,6 +108,7 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
         if bbox_scale_z:
             bpy.data.objects[new_name].select_set(False)
             bpy.data.objects[bound_box.name].select_set(True)
+            bpy.context.view_layer.objects.active = bpy.data.objects[bound_box.name]
             bpy.ops.transform.resize(value=(bbox_scale_xy, bbox_scale_xy, bbox_scale_z),
                                     orient_type='GLOBAL',
                                     orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
@@ -153,10 +155,11 @@ def make_terrain(scene):
         oldpath = pathlib.Path(f"/data/predeal1/google/tren/{zoom}/google-{zoom}-tren.blend")
         sat[zoom] = import_object_from_file(
             scene, newname, oldpath, GOOGLE_SAT_OBJNAME,
-            convert_to_mesh=True, add_bbox=True, bbox_scale_xy=0.9,
+            convert_to_mesh=True, add_bbox=True,
+            # bbox_scale_z=2, bbox_scale_xy=0.5,
             # get_geo_extents=True,
-            # bbox_scale_z=2,
-            # triangulate=True, adaptive_subdivision=False,
+            # triangulate=True,
+            adaptive_subdivision=True,
         )
 
     keys = sorted(sat.keys())
@@ -167,20 +170,37 @@ def make_terrain(scene):
 
     for i, key in enumerate(reversed(keys)):
         # transform_z = -20 * i
-        transform_z = -0 * i
+        transform_z = -5 * i
         bpy.context.view_layer.objects.active = bpy.data.objects[sat[key].name]
         bpy.data.objects[sat[key].name].select_set(True)
 
-        # bpy.ops.earth.curvature()
-        bpy.ops.transform.translate(value=(-0, -0, transform_z), orient_axis_ortho='X',
+        # take edge loop down
+        bpy.ops.object.editmode_toggle()
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.region_to_loop()
+        bpy.ops.transform.translate(value=(-0, -0, transform_z),
+                                    orient_axis_ortho='X',
                                     orient_type='GLOBAL',
                                     orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
                                     orient_matrix_type='GLOBAL',
                                     constraint_axis=(False, False, True),
-                                    mirror=False, use_proportional_edit=False,
+                                    mirror=True, use_proportional_edit=False,
                                     proportional_edit_falloff='SMOOTH', proportional_size=1,
                                     use_proportional_connected=False,
                                     use_proportional_projected=False)
+        bpy.ops.object.editmode_toggle()
+
+
+        # bpy.ops.earth.curvature()
+        # bpy.ops.transform.translate(value=(-0, -0, transform_z), orient_axis_ortho='X',
+        #                             orient_type='GLOBAL',
+        #                             orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+        #                             orient_matrix_type='GLOBAL',
+        #                             constraint_axis=(False, False, True),
+        #                             mirror=False, use_proportional_edit=False,
+        #                             proportional_edit_falloff='SMOOTH', proportional_size=1,
+        #                             use_proportional_connected=False,
+        #                             use_proportional_projected=False)
 
         bpy.data.objects[sat[key].name].select_set(False)
 
@@ -290,7 +310,7 @@ def _get_geo_extents():
 CUBE_BG = "cube/background.blend"
 
 # --- create scene and attach a renderer to it
-scene = kb.Scene(resolution=(333, 333), frame_start=1, frame_end=MAX_FRAMES)
+scene = kb.Scene(resolution=(RESOLUTION_X, RESOLUTION_X), frame_start=1, frame_end=MAX_FRAMES)
 renderer = KubricRenderer(scene, custom_scene=CUBE_BG, custom_scene_shading=True,
                           adaptive_sampling=True, samples_per_pixel=16)
 pre_init_blender()
@@ -328,7 +348,7 @@ camera_obj.data.clip_end = 20000
 #                              look_at=(0, 0, 0), intensity=1.5)
 
 animation_path = 'path_car__1'
-anim_height = 12
+anim_height = 6
 bpy.data.objects[animation_path].select_set(True)
 bpy.context.view_layer.objects.active = bpy.data.objects[animation_path]
 for frame in range(scene.frame_start, scene.frame_end + 1):
