@@ -21,7 +21,7 @@ CAMERA_CLIP_START = 0.01
 CAMERA_CLIP_END = 20000
 
 CAMERA_ENABLE_VIEW_CULLING = False
-CAMERA_ENABLE_BACKFACE_CULLING = True
+CAMERA_ENABLE_BACKFACE_CULLING = False
 
 MAX_FRAMES = 6
 # MAX_FRAMES = 1
@@ -223,6 +223,7 @@ def pre_init_blender():
     bpy.context.scene.render.engine = 'CYCLES'
     bpy.context.scene.cycles.feature_set = 'EXPERIMENTAL'
     bpy.context.scene.view_settings.look = 'Medium High Contrast'
+    bpy.context.scene.cycles.use_preview_denoising = True
 
     # https://blender.stackexchange.com/questions/230011/why-is-area-type-none-when-starting-blender-script-from-cmd
     for area_3d in [area for area in bpy.context.screen.areas if area.type == 'VIEW_3D']:
@@ -257,7 +258,8 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
                             add_bbox=False,
                             bbox_scale_z=None, bbox_scale_xy=1,
                             get_geo_extents=False, convert_to_curve=False,
-                            shrinkwrap_to_plane=None, exclude_from_scene=False):
+                            shrinkwrap_to_planes=None, exclude_from_scene=False,
+                            subsurf_levels=None):
     """save is important to check for bad objects"""
 
     log.info("Importing object from file: %s -> %s ...", orig_name, new_name)
@@ -283,15 +285,22 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
         _get_geo_extents()
 
     if convert_to_mesh:
+        log.info('%s: Convert into MESH', bpy.context.object.name)
         bpy.ops.object.convert(target='MESH')
         bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
 
+    if subsurf_levels:
+        _subsurf_modif(subsurf_levels)
+
     if convert_to_curve:
+        log.info('%s: Convert into CURVE', bpy.context.object.name)
         bpy.ops.object.convert(target='CURVE')
-    if shrinkwrap_to_plane:
-        _shrinkwrap_z(shrinkwrap_to_plane)
+
+    if shrinkwrap_to_planes:
+        _shrinkwrap_z(shrinkwrap_to_planes)
 
     if add_bbox:
+        log.info('%s: Adding BBOX', bpy.context.object.name)
         obj = bpy.data.objects[new_name]
         # create a cube for the bounding box
         bpy.ops.mesh.primitive_cube_add()
@@ -327,6 +336,7 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
         bpy.context.view_layer.objects.active = bpy.data.objects[new_name]
 
     if triangulate:
+        log.info('%s: TRIANGULATE', bpy.context.object.name)
         bpy.ops.object.mode_set(mode='EDIT')      # switch to mesh edit mode
         bpy.ops.mesh.select_all(action='SELECT')  # select all faces
         bpy.ops.mesh.quads_convert_to_tris()      # triangulate
@@ -337,19 +347,38 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
     return cube
 
 
-def _shrinkwrap_z(plane_id):
-    bpy.ops.object.modifier_add(type='SHRINKWRAP')
-    bpy.context.object.modifiers["Shrinkwrap"].target = bpy.data.objects[plane_id]
-    bpy.context.object.modifiers["Shrinkwrap"].wrap_mode = 'ABOVE_SURFACE'
-    bpy.context.object.modifiers["Shrinkwrap"].wrap_method = 'PROJECT'
-    bpy.context.object.modifiers["Shrinkwrap"].use_project_z = True
-    bpy.context.object.modifiers["Shrinkwrap"].use_negative_direction = True
-    bpy.context.object.modifiers["Shrinkwrap"].use_apply_on_spline = True
-    bpy.ops.object.modifier_apply(modifier="Shrinkwrap")
+def _shrinkwrap_z(plane_ids):
+    for plane_id in plane_ids:
+        log.info('%s: Applying SHRINKWRAP onto %s', bpy.context.object.name, plane_id)
+        bpy.ops.object.modifier_add(type='SHRINKWRAP')
+        bpy.context.object.modifiers["Shrinkwrap"].target = bpy.data.objects[plane_id]
+        bpy.context.object.modifiers["Shrinkwrap"].wrap_mode = 'ABOVE_SURFACE'
+        bpy.context.object.modifiers["Shrinkwrap"].wrap_method = 'PROJECT'
+        bpy.context.object.modifiers["Shrinkwrap"].use_project_z = True
+        bpy.context.object.modifiers["Shrinkwrap"].use_negative_direction = True
+        bpy.context.object.modifiers["Shrinkwrap"].use_apply_on_spline = True
+        bpy.ops.object.modifier_apply(modifier="Shrinkwrap")
+
+
+def _subsurf_modif(levels):
+    log.info('%s: Applying SUBSURF levels= %s', bpy.context.object.name, levels)
+    bpy.ops.object.modifier_add(type='SUBSURF')
+    bpy.context.object.modifiers["Subdivision"].subdivision_type = 'CATMULL_CLARK'
+    bpy.context.object.modifiers["Subdivision"].levels = levels
+    bpy.context.object.modifiers["Subdivision"].render_levels = levels
+    bpy.context.object.modifiers["Subdivision"].show_only_control_edges = False
+    bpy.ops.object.modifier_apply(modifier="Subdivision")
+
+
+def _decimate_dissolve(obj, apply=False):
+    modifier_name = 'decimate_dissolve'
+    mod = obj.modifiers.new(modifier_name, 'DECIMATE')
+    mod.decimate_type = 'DISSOLVE'
+    mod.angle_limit = 0.026  # 1.5 deg
+    mod.use_dissolve_boundaries = False
 
 
 def make_terrain(scene, camera_name):
-
     sat = {}
     GOOGLE_SAT_OBJNAME = "EXPORT_GOOGLE_SAT_WM"
     for zoom in range(15, 23):
@@ -361,9 +390,9 @@ def make_terrain(scene, camera_name):
         sat[zoom] = import_object_from_file(
             scene, newname, oldpath, GOOGLE_SAT_OBJNAME,
             convert_to_mesh=True, add_bbox=True,
+            # triangulate=True,
             # bbox_scale_z=2, bbox_scale_xy=0.5,
             # get_geo_extents=True,
-            # triangulate=True,
             # adaptive_subdivision=True,
         )
 
@@ -463,12 +492,14 @@ def make_terrain(scene, camera_name):
         'path_train__1',
         pathlib.Path(f"/data/predeal1/google/tren/22/google-22-tren.blend"),
         '300',
+        subsurf_levels=2,
     )
     import_object_from_file(
         scene,
         'path_train__2',
         pathlib.Path(f"/data/predeal1/google/tren/22/google-22-tren.blend"),
         '300.001',
+        subsurf_levels=2,
     )
 
     import_object_from_file(
@@ -476,13 +507,7 @@ def make_terrain(scene, camera_name):
         'path_car__1',
         pathlib.Path(f"/data/predeal1/google/tren/22/google-22-tren.blend"),
         'Bulevardul Mihail Săulescu',
-    )
-
-    import_object_from_file(
-        scene,
-        'buildings',
-        pathlib.Path(f"/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
-        'Areas:building',
+        subsurf_levels=2,
     )
 
     import_object_from_file(
@@ -491,7 +516,9 @@ def make_terrain(scene, camera_name):
         pathlib.Path(f"/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:highway',
         convert_to_curve=True,
+        subsurf_levels=2,
         # shrinkwrap_to_plane='sat_18',
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
     )
 
     import_object_from_file(
@@ -499,39 +526,14 @@ def make_terrain(scene, camera_name):
         'rails',
         pathlib.Path(f"/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
+        subsurf_levels=2,
         convert_to_curve=True,
-        # shrinkwrap_to_plane='sat_18',
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
     )
 
     # import geometry container cube
     import_geometry_cube(GEOMETRY_SAVE_FILE)
     # import_geometry_cube(GEOMETRY_SAVE_FILE_2)
-
-    view_culling_objects = [i.name for i in sat.values()] + ['buildings']
-    if CAMERA_ENABLE_VIEW_CULLING:
-        # viewport culling (FIRST)
-        view_culling_fov = 88
-        view_culling_padding = 5
-        bpy.data.node_groups['ViewFrustumCulling'].inputs.get('Max Distance').default_value = CAMERA_CLIP_END
-        bpy.data.node_groups['ViewFrustumCulling'].inputs.get('Resolution X').default_value = RESOLUTION_X
-        bpy.data.node_groups['ViewFrustumCulling'].inputs.get('Resolution Y').default_value = RESOLUTION_X
-        bpy.data.node_groups['ViewFrustumCulling'].inputs.get('FOV Angle').default_value = view_culling_fov
-        bpy.data.node_groups['ViewFrustumCulling'].inputs.get('Padding').default_value = view_culling_padding
-        for obj_name in view_culling_objects:
-            new_geometry_modifier(
-                obj_name,
-                'view_culling_pre',
-                'ViewFrustumCulling',
-                {
-                    'Input_2': bpy.data.objects[camera_name],
-                    # these bug out unremarkably
-                    # 'Input_6':  CAMERA_CLIP_END,
-                    # 'Input_9':  RESOLUTION_X,
-                    # 'Input_10': RESOLUTION_X,
-                    # 'Input_11': view_culling_fov,
-                    # 'Input_12': view_culling_padding,
-                },
-            )
 
     geo_mods = {}
     for zoom in sat:
@@ -550,6 +552,55 @@ def make_terrain(scene, camera_name):
             }
         )
 
+        bpy.data.objects[sat[zoom].name].vertex_groups.new(name='paths')
+        geo_mods[zoom]["Output_2_attribute_name"] = "paths"
+
+        # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='rails_prox')
+        # geo_mods[zoom]["Output_6_attribute_name"] = "rails_prox"
+
+        # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='roads_prox')
+        # geo_mods[zoom]["Output_7_attribute_name"] = "roads_prox"
+
+        # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='limit_terrain_prox')
+        # geo_mods[zoom]["Output_8_attribute_name"] = "limit_terrain_prox"
+
+        # after geometry, do a decimate with a low angle to reduce redundant faces
+        _decimate_dissolve(bpy.data.objects[sat[zoom].name])
+
+    bpy.ops.object.select_all(action='DESELECT')
+
+    for outer_zoom, inner_zoom in zip(keys, keys[1:]):
+        geo_mods[outer_zoom]['Input_5'] = bpy.data.objects[sat[inner_zoom].name]
+
+    # import buiildings last, so the shrinkwrap works over the extra-bent terrain
+    import_object_from_file(
+        scene,
+        'buildings',
+        pathlib.Path(f"/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        'Areas:building',
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
+    )
+    # bpy.data.objects['buildings'].hide_render = True
+    # bpy.data.objects['buildings'].hide_viewport = True
+
+    # set view culling on the camera
+    view_culling_objects = [i.name for i in sat.values()] + ['buildings']
+    if CAMERA_ENABLE_VIEW_CULLING:
+        # viewport culling (FIRST)
+        view_culling_fov = 88
+        view_culling_padding = 5
+        for obj_name in view_culling_objects:
+            new_geometry_modifier(
+                obj_name,
+                'view_culling_pre',
+                'ViewFrustumCulling.v2',
+                {
+                    'Input_2': bpy.data.objects[camera_name],
+                    # these bug out unremarkably for float/int/etc
+                    # 'Input_6':  CAMERA_CLIP_END,
+                },
+                move_to_first=True,
+            )
     if CAMERA_ENABLE_BACKFACE_CULLING:
         # backface culling (LAST)
         for obj_name in view_culling_objects:
@@ -562,10 +613,6 @@ def make_terrain(scene, camera_name):
                 },
             )
 
-    bpy.ops.object.select_all(action='DESELECT')
-
-    for outer_zoom, inner_zoom in zip(keys, keys[1:]):
-        geo_mods[outer_zoom]['Input_5'] = bpy.data.objects[sat[inner_zoom].name]
 
     return sat
 

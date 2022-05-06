@@ -2,7 +2,7 @@
 
 # docker pull gabrielv/kubruntu:blender312
 DOCKER_IMAGE=gabrielv/stanley:blender312
-MEM=8g
+MEM=18g
 
 docker build . --tag $DOCKER_IMAGE
 
