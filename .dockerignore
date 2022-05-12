@@ -2,3 +2,4 @@
 /kubric
 /assets_output
 __pycache__
+.docker-tmp

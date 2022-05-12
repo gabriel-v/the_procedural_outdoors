@@ -1,31 +1,51 @@
+import contextlib
+import random
 import os
 from multiprocessing import Process
-import tempfile
 import subprocess
 import logging
 import pathlib
 import importlib
-import pprint
+import datetime
 
+
+class DeltaTimeFormatter(logging.Formatter):
+    def format(self, record):
+        duration = datetime.datetime.utcfromtimestamp(record.relativeCreated / 1000)
+        record.delta = duration.strftime("%H:%M:%S")
+        return super().format(record)
+
+
+# add custom formatter to root logger
+handler = logging.StreamHandler()
+LOGFORMAT = '+%(delta)s %(funcName)-9s() %(levelname)-9s: %(message)s'
+fmt = DeltaTimeFormatter(LOGFORMAT)
+handler.setFormatter(fmt)
+logging.getLogger().addHandler(handler)
+log = logging.getLogger(__name__)
+log.setLevel('DEBUG')
+
+# need these down here to respect my logging config
 import kubric as kb
-from kubric.renderer.blender import Blender as KubricRenderer
-from kubric.core.assets import UndefinedAsset
-from kubric.core.objects import FileBasedObject
+from kubric.renderer.blender import Blender
 import bpy
 
-logging.basicConfig(level="INFO")
-log = logging.getLogger(__name__)
+RANDOM_TREE_COUNT = 20
 
 CAMERA_LENS = 33.3
-CAMERA_CLIP_START = 0.01
-CAMERA_CLIP_END = 20000
+CAMERA_CLIP_START = 0.1
+CAMERA_CLIP_END = 60000
+SAMPLES_PER_PIXEL = 16
+RENDER_TIME_LIMIT = 222
+# RENDER_TILE_SIZE = 4096
+RENDER_THREAD_COUNT = 6
 
 CAMERA_ENABLE_VIEW_CULLING = False
 CAMERA_ENABLE_BACKFACE_CULLING = False
 
-MAX_FRAMES = 6
+MAX_FRAMES = 10
 # MAX_FRAMES = 1
-RESOLUTION_X = 444
+RESOLUTION_X = 666
 
 MAIN_BLEND_FILE = "output/trains.blend"
 
@@ -38,7 +58,25 @@ GEOMETRY_SAVE_FILE = 'cube/geometry.blend'
 GEOMETRY_TMP_FILE = 'output/tmp-saved-geometry.blend'
 
 
-def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict, show_viewport=True):
+def update_sky_texture():
+
+    # works on both rendering engines
+    bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sky_type = 'PREETHAM'
+    bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].turbidity = random.uniform(2.5, 6)
+    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[1].default_value = 1
+    bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_direction = (
+        random.uniform(-1, 1),
+        random.uniform(-1, 1),
+        random.uniform(0, 1),
+    )
+
+    # for the other type
+    # bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].altitude = camera.position[2]
+
+
+def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict,
+                          show_viewport=True):
+    log.info('adding new geometry modifier obj = %s type = %s ...', object_name, node_group_name)
     mod = bpy.data.objects[object_name].modifiers.new(modifier_name, 'NODES')
     mod.node_group = bpy.data.node_groups[node_group_name]
     for key, value in args_dict.items():
@@ -79,28 +117,33 @@ def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict
 
 
 def import_geometry_cube(blend_path):
+    log.info('importing geometry cube container from  %s...', blend_path)
+    cube = blend_append_object(blend_path, GEOMETRY_DUMMY_CUBE_NAME)
+    cube.select_set(True)
+    cube.hide_render = True
+    cube.hide_viewport = True
+
+
+def blend_append_object(blend_path, obj_name, active_collection=False):
     blend_path = pathlib.Path(blend_path)
     section = "Object"
-    log.info("Importing Geometry Nodes from file: %s/%s ...", blend_path.name, GEOMETRY_DUMMY_CUBE_NAME)
-    filepath  = str(blend_path / section / GEOMETRY_DUMMY_CUBE_NAME)
+    log.info("Appending Blender Object from file: %s/%s ...", blend_path.name, obj_name)
+    filepath = str(blend_path / section / obj_name)
     directory = str(blend_path / section) + '/'
 
-    log.info("bpy.ops.wm.append( filepath='%s', filename='%s', directory='%s')",
-             filepath, GEOMETRY_DUMMY_CUBE_NAME, directory)
-    ap_rv = bpy.ops.wm.append(
+    log.debug("bpy.ops.wm.append( filepath='%s', filename='%s', directory='%s')",
+              filepath, obj_name, directory)
+    bpy.ops.wm.append(
         filepath=filepath,
-        filename=GEOMETRY_DUMMY_CUBE_NAME,
+        filename=obj_name,
         directory=directory,
         set_fake=False,
         use_recursive=False,
         do_reuse_local_id=False,
-        active_collection=False,
+        active_collection=active_collection,
     )
 
-    cube = bpy.data.objects[GEOMETRY_DUMMY_CUBE_NAME]
-    cube.select_set(True)
-    cube.hide_render = True
-    cube.hide_viewport = True
+    cube = bpy.data.objects[obj_name]
     return cube
 
     # # immediately delete the created collection, since we only want the node tree
@@ -124,6 +167,10 @@ def save_geometry(original_path, destination_path, skip_if_missing=True):
         - import Cube later and it should have no extra data
     """
 
+    log.info('saving geometry from %s into %s', original_path, destination_path)
+    if skip_if_missing and not pathlib.Path(original_path).is_file():
+        log.info('skipping save_geometry()')
+        return
     temp_path = GEOMETRY_TMP_FILE
     # use subprocess to run each function, because we want separate bpy imports
     # (and so we get separate blender windows with fresh entries)
@@ -138,7 +185,7 @@ def save_geometry(original_path, destination_path, skip_if_missing=True):
     assert p.exitcode == 0
     try:
         os.unlink(temp_path)
-    except:
+    except Exception:
         pass
 
 
@@ -149,10 +196,12 @@ def _save_geometry_1(original_path, destination_path, skip_if_missing=True):
     log.info('running _save_geometry_1()')
 
     scene = kb.Scene(resolution=(RESOLUTION_X, RESOLUTION_X), frame_start=1, frame_end=MAX_FRAMES)
-    renderer = KubricRenderer(scene, custom_scene=original_path, custom_scene_shading=True,
-                            adaptive_sampling=True, samples_per_pixel=16)
+    renderer = Blender(
+        scene, custom_scene=original_path, custom_scene_shading=True,
+        adaptive_sampling=True, samples_per_pixel=SAMPLES_PER_PIXEL,
+    )
 
-    pre_init_blender()
+    pre_init_blender(renderer)
 
     cube_name = GEOMETRY_DUMMY_CUBE_NAME
     # before creating a new cube, let's delete the old one!
@@ -196,9 +245,9 @@ def _save_geometry_2(original_path, destination_path, skip_if_missing=True):
     log.info('running _save_geometry_2()')
 
     scene = kb.Scene(resolution=(RESOLUTION_X, RESOLUTION_X), frame_start=1, frame_end=MAX_FRAMES)
-    renderer = KubricRenderer(scene, adaptive_sampling=True, samples_per_pixel=16)
+    renderer = Blender(scene, adaptive_sampling=True, samples_per_pixel=SAMPLES_PER_PIXEL)
 
-    pre_init_blender()
+    pre_init_blender(renderer)
     # Geo Container Cube (from storage)
     # import_object_from_file(
     #     scene,
@@ -218,9 +267,11 @@ def save_blend(renderer, destination=MAIN_BLEND_FILE, pack=False):
     renderer.save_state(destination)
 
 
-def pre_init_blender():
+def pre_init_blender(renderer):
     """ Set up blender after kubric renderer instantiation with extra settings """
+    log.info('init settings...')
     bpy.context.scene.render.engine = 'CYCLES'
+    # bpy.context.scene.render.engine = 'BLENDER_EEVEE'
     bpy.context.scene.cycles.feature_set = 'EXPERIMENTAL'
     bpy.context.scene.view_settings.look = 'Medium High Contrast'
     bpy.context.scene.cycles.use_preview_denoising = True
@@ -231,6 +282,31 @@ def pre_init_blender():
             space_3d.lens = CAMERA_LENS
             space_3d.clip_start = CAMERA_CLIP_START
             space_3d.clip_end = CAMERA_CLIP_END
+
+    if os.getenv("KUBRIC_USE_GPU", "False").lower() in ("true", "1", "t"):
+        log.info('enable gpu for main render...')
+        renderer.use_gpu = True
+        bpy.context.preferences.addons["cycles"].preferences.get_devices()
+        devices_used = [d.name for d in bpy.context.preferences.addons["cycles"].preferences.devices
+                        if d.use]
+        log.warning("\n =========== NVIDIA\n============>>> Using the following GPU Device(s): %s",
+                    devices_used)
+
+    bpy.context.scene.render.threads_mode = 'FIXED'
+    bpy.context.scene.render.threads = RENDER_THREAD_COUNT
+    # bpy.context.scene.cycles.tile_size = RENDER_TILE_SIZE
+    bpy.context.scene.cycles.debug_use_spatial_splits = True
+    bpy.context.scene.cycles.debug_bvh_time_steps = 1
+    bpy.context.scene.cycles.max_subdivisions = 6
+    bpy.context.scene.cycles.offscreen_dicing_scale = 44
+    bpy.context.scene.cycles.max_bounces = 6
+    bpy.context.scene.cycles.caustics_refractive = False
+    bpy.context.scene.cycles.caustics_reflective = False
+    # bpy.context.scene.cycles.use_fast_gi = True
+    # bpy.context.scene.render.use_motion_blur = True
+    bpy.context.scene.cycles.time_limit = RENDER_TIME_LIMIT
+    bpy.context.scene.cycles.samples = SAMPLES_PER_PIXEL
+    bpy.context.scene.cycles.preview_samples = SAMPLES_PER_PIXEL
 
 
 def cut_object(target_id, cutout_id, exact=False, hole_tolerant=True, solidify=False):
@@ -320,16 +396,16 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
             bpy.data.objects[bound_box.name].select_set(True)
             bpy.context.view_layer.objects.active = bpy.data.objects[bound_box.name]
             bpy.ops.transform.resize(value=(bbox_scale_xy, bbox_scale_xy, bbox_scale_z),
-                                    orient_type='GLOBAL',
-                                    orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
-                                    orient_matrix_type='GLOBAL',
-                                    constraint_axis=(False, False, True),
-                                    mirror=False,
-                                    use_proportional_edit=False,
-                                    proportional_edit_falloff='SMOOTH',
-                                    proportional_size=1,
-                                    use_proportional_connected=False,
-                                    use_proportional_projected=False)
+                                     orient_type='GLOBAL',
+                                     orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+                                     orient_matrix_type='GLOBAL',
+                                     constraint_axis=(False, False, True),
+                                     mirror=False,
+                                     use_proportional_edit=False,
+                                     proportional_edit_falloff='SMOOTH',
+                                     proportional_size=1,
+                                     use_proportional_connected=False,
+                                     use_proportional_projected=False)
             bpy.data.objects[bound_box.name].select_set(False)
 
         bpy.data.objects[new_name].select_set(True)
@@ -370,7 +446,7 @@ def _subsurf_modif(levels):
     bpy.ops.object.modifier_apply(modifier="Subdivision")
 
 
-def _decimate_dissolve(obj, apply=False):
+def _decimate_dissolve(obj):
     modifier_name = 'decimate_dissolve'
     mod = obj.modifiers.new(modifier_name, 'DECIMATE')
     mod.decimate_type = 'DISSOLVE'
@@ -378,7 +454,84 @@ def _decimate_dissolve(obj, apply=False):
     mod.use_dissolve_boundaries = False
 
 
-def make_terrain(scene, camera_name):
+@contextlib.contextmanager
+def make_active_collection(name):
+    log.info('set active collection = %s', name)
+    try:
+        orig_c = bpy.context.scene.collection
+        layer_old_c = bpy.context.view_layer.active_layer_collection
+        if name not in bpy.data.collections:
+            collection = bpy.data.collections.new(name)
+            orig_c.children.link(collection)
+        else:
+            collection = bpy.data.collections[name]
+
+        layer_collection = bpy.context.view_layer.layer_collection.children[collection.name]
+        bpy.context.view_layer.active_layer_collection = layer_collection
+        yield collection
+    finally:
+        bpy.context.view_layer.active_layer_collection = layer_old_c
+
+
+def load_random_trees_highpoly(tree_count=30):
+    log.info('importing %s x hi poly trees', tree_count)
+    with open('cube/tree-assets.txt', 'r') as f:
+        tree_blend_files = [pathlib.Path(x.strip()) for x in f.readlines()]
+
+    tree_blend_files = random.sample(tree_blend_files, tree_count)
+
+    tree_id_list = []
+    with make_active_collection('trees_high_poly') as c:
+        for blend_path in tree_blend_files:
+            tree_id = blend_path.stem.split('-')[0][6:]
+            tree = blend_append_object(blend_path, tree_id, active_collection=True)
+            # tree.hide_render = True
+            # tree.hide_viewport = True
+            tree_id_list.append(tree.name)
+
+    return tree_id_list, c
+
+
+def load_buildings(scene, sat):
+    log.info('loading buildings...')
+    # import buiildings last, so the shrinkwrap works over the extra-bent terrain
+    import_object_from_file(
+        scene,
+        'buildings',
+        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        'Areas:building',
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
+    )
+    obj = bpy.data.objects['buildings']
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    obj.vertex_groups.new(name='building__top')
+    obj.vertex_groups.new(name='building__side')
+    obj.vertex_groups.new(name='building__wall_uv')
+    obj.vertex_groups.new(name='building__top_uv')
+
+    g1 = new_geometry_modifier(
+        obj.name,
+        'buildings_solidify',
+        'HouseSolidify',
+        {
+            "Output_2_attribute_name": 'building__top',
+            "Output_3_attribute_name": 'building__side',
+            "Output_4_attribute_name": 'building__wall_uv',
+            "Output_5_attribute_name": 'building__top_uv',
+        },
+    )
+
+    # obj.hide_render = True
+    # obj.hide_viewport = True
+
+    # bpy.ops.object.modifier_apply(modifier=g1.name)
+    obj.select_set(False)
+    return obj
+
+
+def make_sat(scene):
+    log.info('importing sattelite stuff...')
     sat = {}
     GOOGLE_SAT_OBJNAME = "EXPORT_GOOGLE_SAT_WM"
     for zoom in range(15, 23):
@@ -393,14 +546,14 @@ def make_terrain(scene, camera_name):
             # triangulate=True,
             # bbox_scale_z=2, bbox_scale_xy=0.5,
             # get_geo_extents=True,
-            # adaptive_subdivision=True,
         )
-
     keys = sorted(sat.keys())
+
+    # cut the big sats in the middle
     for i in range(len(keys) - 1):
         big_obj = sat[keys[i]].name
-        small_obj = sat[keys[i+1]].name + '__bbox'
-        cut_object(big_obj, small_obj, hole_tolerant=i==0)
+        small_obj = sat[keys[i + 1]].name + '__bbox'
+        cut_object(big_obj, small_obj, hole_tolerant=i == 0)
 
     for i, key in enumerate(reversed(keys)):
         # transform_z = -20 * i
@@ -424,7 +577,6 @@ def make_terrain(scene, camera_name):
                                     use_proportional_projected=False)
         bpy.ops.object.editmode_toggle()
 
-
         # bpy.ops.earth.curvature()
         # bpy.ops.transform.translate(value=(-0, -0, transform_z), orient_axis_ortho='X',
         #                             orient_type='GLOBAL',
@@ -438,6 +590,7 @@ def make_terrain(scene, camera_name):
 
         bpy.data.objects[sat[key].name].select_set(False)
 
+    # set up sat shader
     for key in sat:
         obj = bpy.data.objects[sat[key].name]
         mat = obj.active_material
@@ -446,7 +599,7 @@ def make_terrain(scene, camera_name):
         # add bump node color -> height -> normals
         bump = tree.nodes.new(type="ShaderNodeBump")
         bump.location = -200, -333
-        bump.inputs.get('Strength').default_value = 0.36
+        bump.inputs.get('Strength').default_value = 0.4
         bump.inputs.get('Distance').default_value = 1.5
         tree.links.new(tree.nodes["Image Texture"].outputs.get("Color"),
                        bump.inputs.get('Height'))
@@ -454,7 +607,7 @@ def make_terrain(scene, camera_name):
                        tree.nodes['Principled BSDF'].inputs.get('Normal'))
 
         # lower specular --> 0.1 (no shiny mountains pls)
-        tree.nodes["Principled BSDF"].inputs.get('Specular').default_value = 0.1
+        tree.nodes["Principled BSDF"].inputs.get('Specular').default_value = 0
 
         # AO and mix node
         ao = tree.nodes.new(type="ShaderNodeAmbientOcclusion")
@@ -485,19 +638,23 @@ def make_terrain(scene, camera_name):
         tree.links.new(mix.outputs.get('Color'),
                        tree.nodes['Principled BSDF'].inputs.get('Base Color'))
 
+    return sat
 
+
+def import_paths(scene, sat):
+    log.info('importing paths...')
     # extra stuff: paths
     import_object_from_file(
         scene,
         'path_train__1',
-        pathlib.Path(f"/data/predeal1/google/tren/22/google-22-tren.blend"),
+        pathlib.Path("/data/predeal1/google/tren/22/google-22-tren.blend"),
         '300',
         subsurf_levels=2,
     )
     import_object_from_file(
         scene,
         'path_train__2',
-        pathlib.Path(f"/data/predeal1/google/tren/22/google-22-tren.blend"),
+        pathlib.Path("/data/predeal1/google/tren/22/google-22-tren.blend"),
         '300.001',
         subsurf_levels=2,
     )
@@ -505,7 +662,7 @@ def make_terrain(scene, camera_name):
     import_object_from_file(
         scene,
         'path_car__1',
-        pathlib.Path(f"/data/predeal1/google/tren/22/google-22-tren.blend"),
+        pathlib.Path("/data/predeal1/google/tren/22/google-22-tren.blend"),
         'Bulevardul Mihail Săulescu',
         subsurf_levels=2,
     )
@@ -513,7 +670,7 @@ def make_terrain(scene, camera_name):
     import_object_from_file(
         scene,
         'roads',
-        pathlib.Path(f"/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:highway',
         convert_to_curve=True,
         subsurf_levels=2,
@@ -524,12 +681,98 @@ def make_terrain(scene, camera_name):
     import_object_from_file(
         scene,
         'rails',
-        pathlib.Path(f"/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
         subsurf_levels=2,
         convert_to_curve=True,
         shrinkwrap_to_planes=[s.name for s in sat.values()],
     )
+
+
+def load_lowpoly_vegetation(veg_type):
+    log.info('making lowpoly trees...')
+    LOWPOLY_VEG_FILE = '/data/trees/turbosquid-shapepspark-lowpoly/shapespark-low-poly-plants-kit.blend'  # noqa
+    LOWPOLY_OBJECT_NAMES = {
+        "trees": [
+            "Tree-01-1",
+            "Tree-01-2",
+            "Tree-01-3",
+            "Tree-01-4",
+            "Tree-02-1",
+            "Tree-02-2",
+            "Tree-02-3",
+            "Tree-02-4",
+            "Tree-03-1",
+            "Tree-03-2",
+            "Tree-03-3",
+            "Tree-03-4",
+        ],
+    }
+    tree_id_list = []
+    with make_active_collection(veg_type + '_low_poly') as c:
+        for obj_name in LOWPOLY_OBJECT_NAMES[veg_type]:
+            tree = blend_append_object(LOWPOLY_VEG_FILE, obj_name, active_collection=True)
+            # tree.hide_render = True
+            # tree.hide_viewport = True
+            tree_id_list.append(tree.name)
+
+    return tree_id_list, c
+
+
+def make_trees(scene, camera_obj, sat, load_highpoly=False):
+    log.info('making trees...')
+
+    if load_highpoly:
+        tree_list, trees_collection = load_random_trees_highpoly(RANDOM_TREE_COUNT)
+    else:
+        tree_list, trees_collection = load_lowpoly_vegetation('trees')
+
+    ret_list = []
+    for zoom in sat:
+        sat_obj = bpy.data.objects[sat[zoom].name]
+        bpy.ops.object.duplicate(
+            {"object": sat_obj,
+                "selected_objects": [sat_obj]},)
+        obj = bpy.data.objects[sat_obj.name + '.001']
+        obj.name = sat[zoom].name + '__vegetation'
+        # scene += obj
+        # scene += kb.Cube(name=veg_id, scale=(1, 1, 1), position=(0, 0, 0))
+
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+
+        # obj.hide_render = True
+        # obj.hide_viewport = True
+
+        log.info('adding vegetation geometry modifier on zoom level %s...', zoom)
+        g1 = new_geometry_modifier(
+            obj.name,
+            'iarbă',
+            'Iarbă',
+            {
+                "Input_2": camera_obj,
+                "Input_3": trees_collection,
+                # why should it be this simple?
+                # "Input_4_use_attribute": "true",
+                "Input_4_attribute_name": 'paths',
+                "Input_5": sat_obj,
+            },
+        )
+        bpy.ops.object.geometry_nodes_input_attribute_toggle(
+            prop_path="[\"Input_4_use_attribute\"]",
+            modifier_name=g1.name,
+        )
+
+        obj.select_set(False)
+        ret_list.append(obj)
+    return ret_list
+
+
+def make_terrain(scene, camera_obj):
+    log.info('creating terrain...')
+    sat = make_sat(scene)
+    keys = sorted(sat.keys())
+    import_paths(scene, sat)
 
     # import geometry container cube
     import_geometry_cube(GEOMETRY_SAVE_FILE)
@@ -544,7 +787,7 @@ def make_terrain(scene, camera_name):
         # for each landmap item, set Geometry modifier
         geo_mods[zoom] = new_geometry_modifier(
             sat[zoom].name,
-            'terrain_adjust_h_' + str(zoom),
+            'terrain_adjust',
             'terrain_adjust_height',
             {
                 'Input_3': bpy.data.objects["rails"],
@@ -572,35 +815,75 @@ def make_terrain(scene, camera_name):
     for outer_zoom, inner_zoom in zip(keys, keys[1:]):
         geo_mods[outer_zoom]['Input_5'] = bpy.data.objects[sat[inner_zoom].name]
 
-    # import buiildings last, so the shrinkwrap works over the extra-bent terrain
-    import_object_from_file(
-        scene,
-        'buildings',
-        pathlib.Path(f"/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
-        'Areas:building',
-        shrinkwrap_to_planes=[s.name for s in sat.values()],
-    )
-    # bpy.data.objects['buildings'].hide_render = True
-    # bpy.data.objects['buildings'].hide_viewport = True
+    # apply all the sat geo mods from above, including and what-have-you
+    # for zoom in sat:
+    #     sat_obj = bpy.data.objects[sat[zoom].name]
+    #     sat_obj.select_set(True)
+    #     bpy.context.view_layer.objects.active = sat_obj
 
-    # set view culling on the camera
+    #     for mod in sat_obj.modifiers:
+    #         log.info('applying modifier %s on object %s', mod.name.encode('ascii', 'backslashreplace').decode('ascii'), sat_obj.name)  # noqa
+    #         bpy.ops.object.modifier_apply(modifier=mod.name)
+
+    #     sat_obj.select_set(False)
+
+    building_object = load_buildings(scene, sat)
+
+    trees = make_trees(scene, camera_obj, sat)
+
+    # make_view_culling_geonodes(sat, camera_obj)
+
+    # at the end, apply adaptive subdivision for all relevant objects
+    # log.info('enabling adaptive subdivision...')
+    # objects_for_adaptive_subdivision = \
+    #     [bpy.data.objects[sat[zoom].name] for zoom in sat] + [building_object] + trees
+    # enable_adaptive_subdivision(objects_for_adaptive_subdivision)
+
+    return sat
+
+
+def enable_adaptive_subdivision(object_list):
+    log.info('enabling adaptive subdivision for %s objects', len(object_list))
+    for obj in object_list:
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.modifier_add(type='SUBSURF')
+        bpy.context.object.cycles.use_adaptive_subdivision = True
+        bpy.context.object.cycles.dicing_rate = 0.9
+        bpy.context.object.modifiers["Subdivision"].levels = 0
+        obj.select_set(False)
+
+
+def make_view_culling_geonodes(sat, camera_obj):
+    log.info('adding view culling...')
+    # set view culling on the camera for buildings & sat
     view_culling_objects = [i.name for i in sat.values()] + ['buildings']
     if CAMERA_ENABLE_VIEW_CULLING:
         # viewport culling (FIRST)
-        view_culling_fov = 88
-        view_culling_padding = 5
+
         for obj_name in view_culling_objects:
             new_geometry_modifier(
                 obj_name,
                 'view_culling_pre',
                 'ViewFrustumCulling.v2',
                 {
-                    'Input_2': bpy.data.objects[camera_name],
+                    'Input_2': camera_obj,
                     # these bug out unremarkably for float/int/etc
                     # 'Input_6':  CAMERA_CLIP_END,
                 },
-                move_to_first=True,
             )
+            # TODO script these default values
+            # view_culling_fov = 88
+            # view_culling_padding = 5
+
+            # move camera culling modifier to first place
+            bpy.ops.object.select_all(action='DESELECT')
+            bpy.context.view_layer.objects.active = bpy.data.objects[obj_name]
+            bpy.data.objects[obj_name].select_set(True)
+            while bpy.data.objects[obj_name].modifiers[0].name != "view_culling_pre":
+                bpy.ops.object.modifier_move_up(modifier="view_culling_pre")
+            bpy.ops.object.select_all(action='DESELECT')
+
     if CAMERA_ENABLE_BACKFACE_CULLING:
         # backface culling (LAST)
         for obj_name in view_culling_objects:
@@ -609,15 +892,13 @@ def make_terrain(scene, camera_name):
                 'view_culling_post',
                 'Backface Culling',
                 {
-                    'Input_2': bpy.data.objects[camera_name],
+                    'Input_2': camera_obj,
                 },
             )
 
 
-    return sat
-
-
 def load_addons():
+    log.info('loading addons')
     # bpy.ops.preferences.addon_install(filepath='/addons/BlenderGIS/__init__.py')
     bpy.ops.preferences.addon_enable(module='BlenderGIS')
 
@@ -654,33 +935,35 @@ def render_main():
 
 # --- create scene and attach a renderer to it
     scene = kb.Scene(resolution=(RESOLUTION_X, RESOLUTION_X), frame_start=1, frame_end=MAX_FRAMES)
-    renderer = KubricRenderer(scene, custom_scene=CUBE_BG, custom_scene_shading=True,
-                            adaptive_sampling=True, samples_per_pixel=16)
-    pre_init_blender()
+    renderer = Blender(
+        scene, custom_scene=CUBE_BG, custom_scene_shading=True,
+        adaptive_sampling=True, samples_per_pixel=SAMPLES_PER_PIXEL)
+
+    pre_init_blender(renderer)
 
 # #### OBJECTS #####
 # ============
-
 
 # pos = .object.matrix_world.to_translation()
     CUBE_FG = pathlib.Path("cube/cube.blend")
     cube = import_object_from_file(scene, "Cube0", CUBE_FG, "Cube")
     cube.position = (0, 0, 1100)
 
-    cube_light = kb.PointLight(name="cube_light", position=(0,0,1100), intensity=6666)
+    cube_light = kb.PointLight(name="cube_light", position=(0, 0, 1100), intensity=6666)
     scene += cube_light
 
 # ### CAMERA ####
 # ============
     camera = kb.PerspectiveCamera(name="camera", position=(6, -5, 1102),
-                                look_at=(0, 0, 1100))
+                                  look_at=(0, 0, 1100))
     scene += camera
     camera_obj = bpy.data.objects[camera.name]
     camera_obj.data.lens = CAMERA_LENS
     camera_obj.data.clip_start = CAMERA_CLIP_START
     camera_obj.data.clip_end = CAMERA_CLIP_END
+    bpy.context.scene.cycles.dicing_camera = camera_obj
 
-    make_terrain(scene, camera.name)
+    make_terrain(scene, camera_obj)
 
 # --- populate the scene with objects, lights, cameras
 # scene += kb.Cube(name="floor", scale=(10, 10, 0.1), position=(0, 0, -0.1))
@@ -688,15 +971,15 @@ def render_main():
 # scene += kb.DirectionalLight(name="sun", position=(-1, -0.5, 3),
 #                              look_at=(0, 0, 0), intensity=1.5)
 
+    log.info('creating keyframes...')
     animation_path = 'path_car__1'
     anim_height = 6
     bpy.data.objects[animation_path].select_set(True)
     bpy.context.view_layer.objects.active = bpy.data.objects[animation_path]
     for frame in range(scene.frame_start, scene.frame_end + 1):
-        i = (frame - scene.frame_start)
         # path coords for frame
         x0, y0, z0 = bpy.context.active_object.data.vertices[frame].co.xyz.to_tuple()
-        x, y, z = bpy.context.active_object.data.vertices[frame+1].co.xyz.to_tuple()
+        x, y, z = bpy.context.active_object.data.vertices[frame + 1].co.xyz.to_tuple()
         z0 += anim_height
         z += anim_height
 
@@ -714,17 +997,15 @@ def render_main():
         cube_light.position = (x, y, z)
         cube_light.keyframe_insert("position", frame)
 
-
-
-# set sky texture altitude to height of camera
-    bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].altitude = camera.position[2]
-# --- render (and save the blender file)
+    update_sky_texture()
+    # --- render (and save the blender file)
     save_blend(renderer, pack=True)
 
 # render and post-process
+    log.info('starting render....')
     data_stack = renderer.render()
 
-    subprocess.check_call(f'rm -rf output/pics/ || true', shell=True)
+    subprocess.check_call('rm -rf output/pics/ || true', shell=True)
     kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
 
     kb.file_io.write_json(filename="output/pics/camera.json", data=kb.get_camera_info(scene.camera))
@@ -740,7 +1021,7 @@ def main():
     load_addons()
     save_geometry(GEOMETRY_INPUT_FILE, GEOMETRY_SAVE_FILE)
 
-    # EXTRA_GEOMETRY_FUNC_FILE = "/data/geometry-nodes-camera-backface-culling/Blender 3 Culling Geometry Nodes.blend"
+    # EXTRA_GEOMETRY_FUNC_FILE = "/data/xxx.blend"
     # save_geometry(EXTRA_GEOMETRY_FUNC_FILE, GEOMETRY_SAVE_FILE_2)
 
     render_main()

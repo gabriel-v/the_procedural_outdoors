@@ -3,3 +3,4 @@
 /assets_output
 /addons/BlenderGIS
 __pycache__
+.docker-tmp

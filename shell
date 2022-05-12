@@ -2,15 +2,25 @@
 
 # docker pull gabrielv/kubruntu:blender312
 DOCKER_IMAGE=gabrielv/stanley:blender312
-MEM=18g
+MEM=28g
+SHMEM=10g
 
 docker build . --tag $DOCKER_IMAGE
 
+mkdir -p .docker.tmp
+         # -e KUBRIC_USE_GPU=t \
 docker run --rm -it  \
+            --user $(id -u):$(id -g) \
            -m $MEM --memory-swap=$MEM \
-           --user $(id -u):$(id -g) \
+        --shm-size=$SHMEM \
            --volume "$(pwd):/app" \
            --mount type=bind,source=/run/user/1000/gvfs/sftp:host=kowalski/data-nas/licenta-2022,destination=/data,ro \
+           --mount "type=bind,source=$PWD/.docker-tmp,destination=/tmp" \
            -w /app \
+         --runtime=nvidia \
+         --gpus '"device=0"' \
+         --device /dev/nvidiactl \
+         --device /dev/nvidia0 \
+         --device /dev/nvidia-uvm \
            $DOCKER_IMAGE \
            $@
