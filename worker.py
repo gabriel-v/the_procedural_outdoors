@@ -34,7 +34,7 @@ RANDOM_TREE_COUNT = 20
 
 CAMERA_LENS = 33.3
 CAMERA_CLIP_START = 0.1
-CAMERA_CLIP_END = 60000
+CAMERA_CLIP_END = 70000
 SAMPLES_PER_PIXEL = 16
 RENDER_TIME_LIMIT = 222
 # RENDER_TILE_SIZE = 4096
@@ -58,20 +58,21 @@ GEOMETRY_SAVE_FILE = 'cube/geometry.blend'
 GEOMETRY_TMP_FILE = 'output/tmp-saved-geometry.blend'
 
 
-def update_sky_texture():
-
-    # works on both rendering engines
-    bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sky_type = 'PREETHAM'
-    bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].turbidity = random.uniform(2.5, 6)
-    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[1].default_value = 1
-    bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_direction = (
-        random.uniform(-1, 1),
-        random.uniform(-1, 1),
-        random.uniform(0, 1),
-    )
-
-    # for the other type
-    # bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].altitude = camera.position[2]
+def update_sky_texture(sky_texture='P', camera=None):
+    if sky_texture == 'P':
+        # works on both rendering engines
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sky_type = 'PREETHAM'
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].turbidity = random.uniform(2.5, 6)
+        bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[1].default_value = 1
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_direction = (
+            random.uniform(-1, 1),
+            random.uniform(-1, 1),
+            random.uniform(0, 1),
+        )
+    elif sky_texture == 'N':
+        # only works on raytrace engine
+        if camera:
+            bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].altitude = camera.position[2]
 
 
 def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict,
@@ -211,29 +212,28 @@ def _save_geometry_1(original_path, destination_path, skip_if_missing=True):
             bpy.data.objects.remove(obj, do_unlink=True)
 
     scene += kb.Cube(name=cube_name, scale=(1, 1, 1), position=(0, 0, 0))
-    cube = bpy.data.objects[cube_name]
-    bpy.context.view_layer.objects.active = cube
-    cube.select_set(True)
-    cube.hide_render = True
-    cube.hide_viewport = True
 
-    already_added = set()
-    for node_group in bpy.data.node_groups:
-        # for each landmap item, set Geometry modifier
-        if node_group.name in already_added:
-            log.info('skipping save of duplicate %s', node_group.name)
-            continue
-        already_added.add(node_group.name)
-        mod = cube.modifiers.new('geometry_wrapper_' + node_group.name, 'NODES')
-        mod.node_group = bpy.data.node_groups[node_group.name]
+    with make_active_object(cube_name) as cube:
+        cube.hide_render = True
+        cube.hide_viewport = True
 
-    # immediately delete the created objects, since we *really* only want the cube
-    for obj in bpy.data.objects:
-        if obj.name != GEOMETRY_DUMMY_CUBE_NAME:
-            log.info('DELETE  %s', obj.name)
-            bpy.data.objects.remove(obj, do_unlink=True)
-        else:
-            log.info('KEEP %s', obj.name)
+        already_added = set()
+        for node_group in bpy.data.node_groups:
+            # for each landmap item, set Geometry modifier
+            if node_group.name in already_added:
+                log.info('skipping save of duplicate %s', node_group.name)
+                continue
+            already_added.add(node_group.name)
+            mod = cube.modifiers.new('geometry_wrapper_' + node_group.name, 'NODES')
+            mod.node_group = bpy.data.node_groups[node_group.name]
+
+        # immediately delete the created objects, since we *really* only want the cube
+        for obj in bpy.data.objects:
+            if obj.name != GEOMETRY_DUMMY_CUBE_NAME:
+                log.info('DELETE  %s', obj.name)
+                bpy.data.objects.remove(obj, do_unlink=True)
+            else:
+                log.info('KEEP %s', obj.name)
 
     save_blend(renderer, destination_path)
 
@@ -311,22 +311,23 @@ def pre_init_blender(renderer):
 
 def cut_object(target_id, cutout_id, exact=False, hole_tolerant=True, solidify=False):
     log.info('cutting %s out of %s', cutout_id, target_id)
-    # bpy.data.objects[target_id].select_set(True)
-    bpy.context.view_layer.objects.active = bpy.data.objects[target_id]
 
-    bpy.ops.object.modifier_add(type='BOOLEAN')
-    bpy.context.object.modifiers["Boolean"].operation = 'DIFFERENCE'
-    bpy.context.object.modifiers["Boolean"].object = bpy.data.objects[cutout_id]
+    # bpy.context.view_layer.objects.active = bpy.data.objects[target_id]
+    with make_active_object(target_id) as obj:
 
-    if exact:
-        bpy.context.object.modifiers["Boolean"].solver = 'EXACT'
-        bpy.context.object.modifiers["Boolean"].use_self = False
-        bpy.context.object.modifiers["Boolean"].use_hole_tolerant = hole_tolerant
-    else:
-        bpy.context.object.modifiers["Boolean"].solver = 'FAST'
-        bpy.context.object.modifiers["Boolean"].double_threshold = 0
+        bpy.ops.object.modifier_add(type='BOOLEAN')
+        bpy.context.object.modifiers["Boolean"].operation = 'DIFFERENCE'
+        bpy.context.object.modifiers["Boolean"].object = bpy.data.objects[cutout_id]
 
-    bpy.ops.object.modifier_apply(modifier="Boolean")
+        if exact:
+            bpy.context.object.modifiers["Boolean"].solver = 'EXACT'
+            bpy.context.object.modifiers["Boolean"].use_self = False
+            bpy.context.object.modifiers["Boolean"].use_hole_tolerant = hole_tolerant
+        else:
+            bpy.context.object.modifiers["Boolean"].solver = 'FAST'
+            bpy.context.object.modifiers["Boolean"].double_threshold = 0
+
+        bpy.ops.object.modifier_apply(modifier="Boolean")
 
 
 def import_object_from_file(scene, new_name, orig_filename, orig_name,
@@ -455,6 +456,21 @@ def _decimate_dissolve(obj):
 
 
 @contextlib.contextmanager
+def make_active_object(name):
+    assert name in bpy.data.objects
+    obj = bpy.data.objects[name]
+    log.info('set active object = %s', name)
+    try:
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        yield obj
+    finally:
+        obj.select_set(False)
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.context.view_layer.objects.active = None
+
+
+@contextlib.contextmanager
 def make_active_collection(name):
     log.info('set active collection = %s', name)
     try:
@@ -492,7 +508,7 @@ def load_random_trees_highpoly(tree_count=30):
     return tree_id_list, c
 
 
-def load_buildings(scene, sat):
+def load_buildings(scene, sat, apply_mod=False):
     log.info('loading buildings...')
     # import buiildings last, so the shrinkwrap works over the extra-bent terrain
     import_object_from_file(
@@ -502,31 +518,29 @@ def load_buildings(scene, sat):
         'Areas:building',
         shrinkwrap_to_planes=[s.name for s in sat.values()],
     )
-    obj = bpy.data.objects['buildings']
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    obj.vertex_groups.new(name='building__top')
-    obj.vertex_groups.new(name='building__side')
-    obj.vertex_groups.new(name='building__wall_uv')
-    obj.vertex_groups.new(name='building__top_uv')
+    with make_active_object('buildings') as obj:
+        obj.vertex_groups.new(name='building__top')
+        obj.vertex_groups.new(name='building__side')
+        obj.vertex_groups.new(name='building__wall_uv')
+        obj.vertex_groups.new(name='building__top_uv')
 
-    g1 = new_geometry_modifier(
-        obj.name,
-        'buildings_solidify',
-        'HouseSolidify',
-        {
-            "Output_2_attribute_name": 'building__top',
-            "Output_3_attribute_name": 'building__side',
-            "Output_4_attribute_name": 'building__wall_uv',
-            "Output_5_attribute_name": 'building__top_uv',
-        },
-    )
+        g1 = new_geometry_modifier(
+            obj.name,
+            'buildings_solidify',
+            'HouseSolidify',
+            {
+                "Output_2_attribute_name": 'building__top',
+                "Output_3_attribute_name": 'building__side',
+                "Output_4_attribute_name": 'building__wall_uv',
+                "Output_5_attribute_name": 'building__top_uv',
+            },
+        )
 
-    # obj.hide_render = True
-    # obj.hide_viewport = True
+        # obj.hide_render = True
+        # obj.hide_viewport = True
 
-    # bpy.ops.object.modifier_apply(modifier=g1.name)
-    obj.select_set(False)
+        if apply_mod:
+            bpy.ops.object.modifier_apply(modifier=g1.name)
     return obj
 
 
@@ -558,85 +572,82 @@ def make_sat(scene):
     for i, key in enumerate(reversed(keys)):
         # transform_z = -20 * i
         transform_z = -5 * i
-        bpy.context.view_layer.objects.active = bpy.data.objects[sat[key].name]
-        bpy.data.objects[sat[key].name].select_set(True)
 
-        # take edge loop down
-        bpy.ops.object.editmode_toggle()
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.region_to_loop()
-        bpy.ops.transform.translate(value=(-0, -0, transform_z),
-                                    orient_axis_ortho='X',
-                                    orient_type='GLOBAL',
-                                    orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
-                                    orient_matrix_type='GLOBAL',
-                                    constraint_axis=(False, False, True),
-                                    mirror=True, use_proportional_edit=False,
-                                    proportional_edit_falloff='SMOOTH', proportional_size=1,
-                                    use_proportional_connected=False,
-                                    use_proportional_projected=False)
-        bpy.ops.object.editmode_toggle()
+        with make_active_object(sat[key].name) as obj:
+            # take edge loop down
+            bpy.ops.object.editmode_toggle()
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.region_to_loop()
+            bpy.ops.transform.translate(value=(-0, -0, transform_z),
+                                        orient_axis_ortho='X',
+                                        orient_type='GLOBAL',
+                                        orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+                                        orient_matrix_type='GLOBAL',
+                                        constraint_axis=(False, False, True),
+                                        mirror=True, use_proportional_edit=False,
+                                        proportional_edit_falloff='SMOOTH', proportional_size=1,
+                                        use_proportional_connected=False,
+                                        use_proportional_projected=False)
+            bpy.ops.object.editmode_toggle()
 
-        # bpy.ops.earth.curvature()
-        # bpy.ops.transform.translate(value=(-0, -0, transform_z), orient_axis_ortho='X',
-        #                             orient_type='GLOBAL',
-        #                             orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
-        #                             orient_matrix_type='GLOBAL',
-        #                             constraint_axis=(False, False, True),
-        #                             mirror=False, use_proportional_edit=False,
-        #                             proportional_edit_falloff='SMOOTH', proportional_size=1,
-        #                             use_proportional_connected=False,
-        #                             use_proportional_projected=False)
-
-        bpy.data.objects[sat[key].name].select_set(False)
+            # bpy.ops.earth.curvature()
+            # bpy.ops.transform.translate(value=(-0, -0, transform_z), orient_axis_ortho='X',
+            #                             orient_type='GLOBAL',
+            #                             orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+            #                             orient_matrix_type='GLOBAL',
+            #                             constraint_axis=(False, False, True),
+            #                             mirror=False, use_proportional_edit=False,
+            #                             proportional_edit_falloff='SMOOTH', proportional_size=1,
+            #                             use_proportional_connected=False,
+            #                             use_proportional_projected=False)
 
     # set up sat shader
     for key in sat:
-        obj = bpy.data.objects[sat[key].name]
-        mat = obj.active_material
-        tree = bpy.data.materials[mat.name].node_tree
+        with make_active_object(sat[key].name) as obj:
+            mat = obj.active_material
+            tree = bpy.data.materials[mat.name].node_tree
 
-        # add bump node color -> height -> normals
-        bump = tree.nodes.new(type="ShaderNodeBump")
-        bump.location = -200, -333
-        bump.inputs.get('Strength').default_value = 0.4
-        bump.inputs.get('Distance').default_value = 1.5
-        tree.links.new(tree.nodes["Image Texture"].outputs.get("Color"),
-                       bump.inputs.get('Height'))
-        tree.links.new(bump.outputs.get('Normal'),
-                       tree.nodes['Principled BSDF'].inputs.get('Normal'))
+            # add bump node color -> height -> normals
+            bump = tree.nodes.new(type="ShaderNodeBump")
+            bump.location = -200, -333
+            bump.inputs.get('Strength').default_value = 0.4
+            bump.inputs.get('Distance').default_value = 1.5
+            tree.links.new(tree.nodes["Image Texture"].outputs.get("Color"),
+                           bump.inputs.get('Height'))
+            tree.links.new(bump.outputs.get('Normal'),
+                           tree.nodes['Principled BSDF'].inputs.get('Normal'))
 
-        # lower specular --> 0.1 (no shiny mountains pls)
-        tree.nodes["Principled BSDF"].inputs.get('Specular').default_value = 0
+            # lower specular --> 0.1 (no shiny mountains pls)
+            tree.nodes["Principled BSDF"].inputs.get('Specular').default_value = 0
 
-        # AO and mix node
-        ao = tree.nodes.new(type="ShaderNodeAmbientOcclusion")
-        ao.inputs[1].default_value = 200
-        ao.location = -300, 300
-        tree.links.new(tree.nodes["Image Texture"].outputs.get("Color"),
-                       ao.inputs.get('Color'))
+            # AO and mix node
+            ao = tree.nodes.new(type="ShaderNodeAmbientOcclusion")
+            ao.inputs[1].default_value = 200
+            ao.location = -300, 300
+            tree.links.new(tree.nodes["Image Texture"].outputs.get("Color"),
+                           ao.inputs.get('Color'))
 
-        math = tree.nodes.new(type="ShaderNodeMath")
-        math.operation = "POWER"
-        math.location = -50, 300
-        math.use_clamp = True
-        tree.links.new(ao.outputs.get("Color"), math.inputs[0])
-        math.inputs[1].default_value = 55.5
+            math = tree.nodes.new(type="ShaderNodeMath")
+            math.operation = "POWER"
+            math.location = -50, 300
+            math.use_clamp = True
+            tree.links.new(ao.outputs.get("Color"), math.inputs[0])
+            math.inputs[1].default_value = 55.5
 
-        mix = tree.nodes.new(type="ShaderNodeMixRGB")
-        mix.use_clamp = True
-        mix.blend_type = "MULTIPLY"
-        mix.inputs.get('Fac').default_value = 0.4
-        mix.location = 150, 300
+            mix = tree.nodes.new(type="ShaderNodeMixRGB")
+            mix.use_clamp = True
+            mix.blend_type = "MULTIPLY"
+            mix.inputs.get('Fac').default_value = 0.4
+            mix.location = 150, 300
 
-        tree.links.new(tree.nodes["Image Texture"].outputs.get("Color"),
-                       mix.inputs.get('Color1'))
+            tree.links.new(tree.nodes["Image Texture"].outputs.get("Color"),
+                           mix.inputs.get('Color1'))
 
-        tree.links.new(math.outputs.get("Value"),
-                       mix.inputs.get('Color2'))
+            tree.links.new(math.outputs.get("Value"),
+                           mix.inputs.get('Color2'))
 
-        tree.links.new(mix.outputs.get('Color'),
-                       tree.nodes['Principled BSDF'].inputs.get('Base Color'))
+            tree.links.new(mix.outputs.get('Color'),
+                           tree.nodes['Principled BSDF'].inputs.get('Base Color'))
 
     return sat
 
@@ -719,7 +730,7 @@ def load_lowpoly_vegetation(veg_type):
     return tree_id_list, c
 
 
-def make_trees(scene, camera_obj, sat, load_highpoly=False):
+def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=False):
     log.info('making trees...')
 
     if load_highpoly:
@@ -738,37 +749,35 @@ def make_trees(scene, camera_obj, sat, load_highpoly=False):
         # scene += obj
         # scene += kb.Cube(name=veg_id, scale=(1, 1, 1), position=(0, 0, 0))
 
-        obj.select_set(True)
-        bpy.context.view_layer.objects.active = obj
+        with make_active_collection(obj.name):
+            # obj.hide_render = True
+            # obj.hide_viewport = True
 
-        # obj.hide_render = True
-        # obj.hide_viewport = True
+            log.info('adding vegetation geometry modifier on zoom level %s...', zoom)
+            g1 = new_geometry_modifier(
+                obj.name,
+                'iarbă',
+                'Iarbă',
+                {
+                    "Input_2": camera_obj,
+                    "Input_3": trees_collection,
+                    "Input_5": sat_obj,
+                    "Input_6": roads,
+                    "Input_7": rails,
+                    "Input_8": buildings,
+                    # "Input_4_attribute_name": 'paths',
+                },
+            )
+            # bpy.ops.object.geometry_nodes_input_attribute_toggle(
+            #     prop_path="[\"Input_4_use_attribute\"]",
+            #     modifier_name=g1.name,
+            # )
 
-        log.info('adding vegetation geometry modifier on zoom level %s...', zoom)
-        g1 = new_geometry_modifier(
-            obj.name,
-            'iarbă',
-            'Iarbă',
-            {
-                "Input_2": camera_obj,
-                "Input_3": trees_collection,
-                # why should it be this simple?
-                # "Input_4_use_attribute": "true",
-                "Input_4_attribute_name": 'paths',
-                "Input_5": sat_obj,
-            },
-        )
-        bpy.ops.object.geometry_nodes_input_attribute_toggle(
-            prop_path="[\"Input_4_use_attribute\"]",
-            modifier_name=g1.name,
-        )
-
-        obj.select_set(False)
-        ret_list.append(obj)
+            ret_list.append(obj)
     return ret_list
 
 
-def make_terrain(scene, camera_obj):
+def make_terrain(scene, camera_obj, make_trees=False):
     log.info('creating terrain...')
     sat = make_sat(scene)
     keys = sorted(sat.keys())
@@ -781,36 +790,32 @@ def make_terrain(scene, camera_obj):
     geo_mods = {}
     for zoom in sat:
         # select land obj
-        bpy.context.view_layer.objects.active = bpy.data.objects[sat[zoom].name]
-        bpy.data.objects[sat[zoom].name].select_set(True)
+        with make_active_object(sat[zoom].name) as sat_obj:
+            # for each landmap item, set Geometry modifier
+            geo_mods[zoom] = new_geometry_modifier(
+                sat[zoom].name,
+                'terrain_adjust',
+                'terrain_adjust_height',
+                {
+                    'Input_3': bpy.data.objects["rails"],
+                    'Input_4': bpy.data.objects["roads"]
+                }
+            )
 
-        # for each landmap item, set Geometry modifier
-        geo_mods[zoom] = new_geometry_modifier(
-            sat[zoom].name,
-            'terrain_adjust',
-            'terrain_adjust_height',
-            {
-                'Input_3': bpy.data.objects["rails"],
-                'Input_4': bpy.data.objects["roads"]
-            }
-        )
+            bpy.data.objects[sat[zoom].name].vertex_groups.new(name='paths')
+            geo_mods[zoom]["Output_2_attribute_name"] = "paths"
 
-        bpy.data.objects[sat[zoom].name].vertex_groups.new(name='paths')
-        geo_mods[zoom]["Output_2_attribute_name"] = "paths"
+            # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='rails_prox')
+            # geo_mods[zoom]["Output_6_attribute_name"] = "rails_prox"
 
-        # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='rails_prox')
-        # geo_mods[zoom]["Output_6_attribute_name"] = "rails_prox"
+            # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='roads_prox')
+            # geo_mods[zoom]["Output_7_attribute_name"] = "roads_prox"
 
-        # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='roads_prox')
-        # geo_mods[zoom]["Output_7_attribute_name"] = "roads_prox"
+            # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='limit_terrain_prox')
+            # geo_mods[zoom]["Output_8_attribute_name"] = "limit_terrain_prox"
 
-        # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='limit_terrain_prox')
-        # geo_mods[zoom]["Output_8_attribute_name"] = "limit_terrain_prox"
-
-        # after geometry, do a decimate with a low angle to reduce redundant faces
-        _decimate_dissolve(bpy.data.objects[sat[zoom].name])
-
-    bpy.ops.object.select_all(action='DESELECT')
+            # after geometry, do a decimate with a low angle to reduce redundant faces
+            _decimate_dissolve(bpy.data.objects[sat[zoom].name])
 
     for outer_zoom, inner_zoom in zip(keys, keys[1:]):
         geo_mods[outer_zoom]['Input_5'] = bpy.data.objects[sat[inner_zoom].name]
@@ -829,7 +834,12 @@ def make_terrain(scene, camera_obj):
 
     building_object = load_buildings(scene, sat)
 
-    trees = make_trees(scene, camera_obj, sat)
+    if make_trees:
+        trees = make_trees(
+            scene, camera_obj, sat,
+            bpy.data.objects['roads'],
+            bpy.data.objects['rails'], building_object,
+        )
 
     # make_view_culling_geonodes(sat, camera_obj)
 
@@ -845,13 +855,11 @@ def make_terrain(scene, camera_obj):
 def enable_adaptive_subdivision(object_list):
     log.info('enabling adaptive subdivision for %s objects', len(object_list))
     for obj in object_list:
-        bpy.context.view_layer.objects.active = obj
-        obj.select_set(True)
-        bpy.ops.object.modifier_add(type='SUBSURF')
-        bpy.context.object.cycles.use_adaptive_subdivision = True
-        bpy.context.object.cycles.dicing_rate = 0.9
-        bpy.context.object.modifiers["Subdivision"].levels = 0
-        obj.select_set(False)
+        with make_active_object(obj.name):
+            bpy.ops.object.modifier_add(type='SUBSURF')
+            bpy.context.object.cycles.use_adaptive_subdivision = True
+            bpy.context.object.cycles.dicing_rate = 0.9
+            bpy.context.object.modifiers["Subdivision"].levels = 0
 
 
 def make_view_culling_geonodes(sat, camera_obj):
@@ -974,28 +982,28 @@ def render_main():
     log.info('creating keyframes...')
     animation_path = 'path_car__1'
     anim_height = 6
-    bpy.data.objects[animation_path].select_set(True)
-    bpy.context.view_layer.objects.active = bpy.data.objects[animation_path]
-    for frame in range(scene.frame_start, scene.frame_end + 1):
-        # path coords for frame
-        x0, y0, z0 = bpy.context.active_object.data.vertices[frame].co.xyz.to_tuple()
-        x, y, z = bpy.context.active_object.data.vertices[frame + 1].co.xyz.to_tuple()
-        z0 += anim_height
-        z += anim_height
 
-        scene.camera.position = (x0 - 5, y0 + 5, z0 + 2)
-        scene.camera.look_at((x, y, z))
+    with make_active_object(animation_path):
+        for frame in range(scene.frame_start, scene.frame_end + 1):
+            # path coords for frame
+            x0, y0, z0 = bpy.context.active_object.data.vertices[frame].co.xyz.to_tuple()
+            x, y, z = bpy.context.active_object.data.vertices[frame + 1].co.xyz.to_tuple()
+            z0 += anim_height
+            z += anim_height
 
-        scene.camera.keyframe_insert("position", frame)
-        scene.camera.keyframe_insert("quaternion", frame)
+            scene.camera.position = (x0 - 5, y0 + 5, z0 + 2)
+            scene.camera.look_at((x, y, z))
 
-        cube.position = (x, y, z)
-        # cube.look_at((0, 0, 0))
-        # cube.keyframe_insert("quaternion", frame)
-        cube.keyframe_insert("position", frame)
+            scene.camera.keyframe_insert("position", frame)
+            scene.camera.keyframe_insert("quaternion", frame)
 
-        cube_light.position = (x, y, z)
-        cube_light.keyframe_insert("position", frame)
+            cube.position = (x, y, z)
+            # cube.look_at((0, 0, 0))
+            # cube.keyframe_insert("quaternion", frame)
+            cube.keyframe_insert("position", frame)
+
+            cube_light.position = (x, y, z)
+            cube_light.keyframe_insert("position", frame)
 
     update_sky_texture()
     # --- render (and save the blender file)

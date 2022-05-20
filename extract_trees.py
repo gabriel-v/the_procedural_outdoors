@@ -2,22 +2,16 @@ import sys
 import shutil
 import os
 from multiprocessing import Pool
-import tempfile
-import subprocess
 import logging
 import pathlib
-import importlib
-import pprint
 
 import kubric as kb
 from kubric.redirect_io import RedirectStream
 from kubric.renderer.blender import Blender as KubricRenderer
-from kubric.core.assets import UndefinedAsset
-from kubric.core.objects import FileBasedObject
 
 import bpy
 
-from worker import pre_init_blender, import_object_from_file, save_blend
+from worker import pre_init_blender, save_blend
 
 logging.basicConfig(level="INFO")
 log = logging.getLogger(__name__)
@@ -42,7 +36,7 @@ def import_object(blend_path, object_name):
     blend_path = pathlib.Path(blend_path)
     section = "Object"
     log.info("Importing Geometry Nodes from file: %s/%s ...", blend_path.name, object_name)
-    filepath  = str(blend_path / section / object_name)
+    filepath = str(blend_path / section / object_name)
     directory = str(blend_path / section) + '/'
 
     # log.info("bpy.ops.wm.append( filepath='%s', filename='%s', directory='%s')",
@@ -61,7 +55,6 @@ def import_object(blend_path, object_name):
     cube.select_set(True)
     bpy.context.view_layer.objects.active = cube
     return cube
-
 
 
 def _prepare_blender_render_settings():
@@ -121,16 +114,16 @@ def uglify_model(obj, level, dims, effect={}):
 
     # low level = low banging up
     LEVEL_SCALE = 8
-    effect_scale = (level/LEVEL_SCALE)**1.5
+    effect_scale = (level / LEVEL_SCALE)**1.5
     if effect_scale > 2:
         effect_scale = 2
 
     MULTIPLIER = 0.22
 
     if not effect or effect.get('a'):
-        decimate_dissolve(MULTIPLIER*effect_scale)
+        decimate_dissolve(MULTIPLIER * effect_scale)
     if not effect or effect.get('b'):
-        decimate_collapse(1-effect_scale*MULTIPLIER)
+        decimate_collapse(1 - effect_scale * MULTIPLIER)
     if not effect or effect.get('c'):
         remove_doubles(avg_dim * effect_scale * MULTIPLIER)
     if not effect or effect.get('d'):
@@ -153,7 +146,7 @@ def _make_lowpoly(path, name, effect=dict()):
     cam_y = dim_y * CAM_DIST
     cam_z = dim_z / 3
     camera = kb.PerspectiveCamera(name="camera", position=(cam_x, cam_y, cam_z),
-                                look_at=(0, 0, dim_z/2))
+                                  look_at=(0, 0, dim_z / 2))
     scene += camera
 
     pre_init_blender()
@@ -163,7 +156,7 @@ def _make_lowpoly(path, name, effect=dict()):
     if effect:
         out_dir += '__' + '_'.join(effect.keys())
     os.makedirs(out_dir)
-    for level in range(1, LEVEL_COUNT+1):
+    for level in range(1, LEVEL_COUNT + 1):
         log.info('======\n level %s', level)
         out_blend = os.path.join(out_dir, f'blend_{name}-{level}.blend')
         out_png = os.path.join(out_dir, f'pic_{name}-{level}.png')
@@ -206,7 +199,7 @@ def main(delete=False):
     if delete:
         try:
             shutil.rmtree(TREE_OUTPUT_DIR)
-        except:
+        except BaseException:
             pass
 
     items = sorted(list(get_objects()))
