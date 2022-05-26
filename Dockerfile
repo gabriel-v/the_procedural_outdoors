@@ -50,4 +50,9 @@ ADD addons $THE_BLENDER_ROOT_PACKAGE/scripts/addons
 
 RUN useradd --create-home --shell /bin/bash userino
 RUN chown userino: /app
+RUN apt-get -y install vim wget curl
+RUN sed -i -E 's/name="memory" value=".+"/name="memory" value="2GiB"/g' /etc/ImageMagick-6/policy.xml
+RUN sed -i -E 's/name="map" value=".+"/name="map" value="2GiB"/g' /etc/ImageMagick-6/policy.xml
+RUN sed -i -E 's/name="area" value=".+"/name="area" value="2GiB"/g' /etc/ImageMagick-6/policy.xml
+RUN sed -i -E 's/name="disk" value=".+"/name="disk" value="8GiB"/g' /etc/ImageMagick-6/policy.xml
 USER userino

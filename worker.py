@@ -1,3 +1,6 @@
+import numpy
+import pandas
+import math
 import contextlib
 import random
 import os
@@ -16,14 +19,18 @@ class DeltaTimeFormatter(logging.Formatter):
         return super().format(record)
 
 
-# add custom formatter to root logger
+# ROOT LOG CONFIG
+LOG_LEVEL = 'INFO'
+logging.getLogger().setLevel(LOG_LEVEL)
 handler = logging.StreamHandler()
 LOGFORMAT = '+%(delta)s %(funcName)-9s() %(levelname)-9s: %(message)s'
 fmt = DeltaTimeFormatter(LOGFORMAT)
 handler.setFormatter(fmt)
 logging.getLogger().addHandler(handler)
+
+# MODULE LOG CONFIG
 log = logging.getLogger(__name__)
-log.setLevel('DEBUG')
+log.setLevel(LOG_LEVEL)
 
 # need these down here to respect my logging config
 import kubric as kb
@@ -38,14 +45,16 @@ CAMERA_CLIP_END = 70000
 SAMPLES_PER_PIXEL = 16
 RENDER_TIME_LIMIT = 222
 # RENDER_TILE_SIZE = 4096
-RENDER_THREAD_COUNT = 6
+RENDER_THREAD_COUNT = 8
 
 CAMERA_ENABLE_VIEW_CULLING = False
 CAMERA_ENABLE_BACKFACE_CULLING = False
 
-MAX_FRAMES = 10
-# MAX_FRAMES = 1
-RESOLUTION_X = 666
+SIMULATION_FPS = 24
+CAMERA_ANIMATION_SPEED_KMH = 60
+CAMERA_ANIMATION_SPEED_M_S = CAMERA_ANIMATION_SPEED_KMH / 3.6
+MAX_FRAMES = 24 * 6
+RESOLUTION_X = 512
 
 MAIN_BLEND_FILE = "output/trains.blend"
 
@@ -73,6 +82,14 @@ def update_sky_texture(sky_texture='P', camera=None):
         # only works on raytrace engine
         if camera:
             bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].altitude = camera.position[2]
+        bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[1].default_value = \
+            random.uniform(0.2, 0.3)
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_intensity = random.uniform(0.4, 0.8)
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_elevation = random.uniform(0.19, 1.4)
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_rotation = random.uniform(-3.141, 3.141)
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].air_density = random.uniform(0.2, 1.6)
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].dust_density = random.uniform(0.1, 1.)
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].ozone_density = random.uniform(0.2, 6)
 
 
 def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict,
@@ -276,6 +293,13 @@ def pre_init_blender(renderer):
     bpy.context.scene.view_settings.look = 'Medium High Contrast'
     bpy.context.scene.cycles.use_preview_denoising = True
 
+    # compositor use opencl & buffering & medium quality
+    bpy.context.scene.render.use_persistent_data = True
+    bpy.data.scenes["Scene"].node_tree.use_opencl = True
+    bpy.data.scenes["Scene"].node_tree.use_groupnode_buffer = True
+    bpy.data.scenes["Scene"].node_tree.render_quality = 'MEDIUM'
+    bpy.data.scenes["Scene"].node_tree.edit_quality = 'MEDIUM'
+
     # https://blender.stackexchange.com/questions/230011/why-is-area-type-none-when-starting-blender-script-from-cmd
     for area_3d in [area for area in bpy.context.screen.areas if area.type == 'VIEW_3D']:
         for space_3d in area_3d.spaces:
@@ -285,14 +309,25 @@ def pre_init_blender(renderer):
 
     if os.getenv("KUBRIC_USE_GPU", "False").lower() in ("true", "1", "t"):
         log.info('enable gpu for main render...')
-        renderer.use_gpu = True
         bpy.context.preferences.addons["cycles"].preferences.get_devices()
+        renderer.use_gpu = True
+        bpy.context.scene.cycles.device = 'GPU'
+        for scene in bpy.data.scenes:
+            scene.cycles.device = 'GPU'
+        # log.info('compute device values: %s',
+        #       list(bpy.context.preferences
+        #            .system.bl_rna.properties['compute_device'].enum_items.keys()))
+        bpy.context.preferences.addons["cycles"].preferences.compute_device_type = "CUDA"
+        for d in bpy.context.preferences.addons["cycles"].preferences.devices:
+            d["use"] = 1  # Using all devices, include GPU and CPU
+            print(d["name"], d["use"])
+
         devices_used = [d.name for d in bpy.context.preferences.addons["cycles"].preferences.devices
                         if d.use]
-        log.warning("\n =========== NVIDIA\n============>>> Using the following GPU Device(s): %s",
+        log.warning("\n =========== GPU\n =========>>> Using the following GPU Device(s): %s",
                     devices_used)
 
-    bpy.context.scene.render.threads_mode = 'FIXED'
+    # bpy.context.scene.render.threads_mode = 'FIXED'
     bpy.context.scene.render.threads = RENDER_THREAD_COUNT
     # bpy.context.scene.cycles.tile_size = RENDER_TILE_SIZE
     bpy.context.scene.cycles.debug_use_spatial_splits = True
@@ -303,20 +338,21 @@ def pre_init_blender(renderer):
     bpy.context.scene.cycles.caustics_refractive = False
     bpy.context.scene.cycles.caustics_reflective = False
     # bpy.context.scene.cycles.use_fast_gi = True
-    # bpy.context.scene.render.use_motion_blur = True
+    bpy.context.scene.render.use_motion_blur = True
     bpy.context.scene.cycles.time_limit = RENDER_TIME_LIMIT
     bpy.context.scene.cycles.samples = SAMPLES_PER_PIXEL
     bpy.context.scene.cycles.preview_samples = SAMPLES_PER_PIXEL
 
 
-def cut_object(target_id, cutout_id, exact=False, hole_tolerant=True, solidify=False):
+def cut_object(target_id, cutout_id, exact=False, hole_tolerant=True,
+               solidify=False, op='DIFFERENCE', apply=True):
     log.info('cutting %s out of %s', cutout_id, target_id)
 
     # bpy.context.view_layer.objects.active = bpy.data.objects[target_id]
     with make_active_object(target_id) as obj:
 
         bpy.ops.object.modifier_add(type='BOOLEAN')
-        bpy.context.object.modifiers["Boolean"].operation = 'DIFFERENCE'
+        bpy.context.object.modifiers["Boolean"].operation = op
         bpy.context.object.modifiers["Boolean"].object = bpy.data.objects[cutout_id]
 
         if exact:
@@ -327,7 +363,8 @@ def cut_object(target_id, cutout_id, exact=False, hole_tolerant=True, solidify=F
             bpy.context.object.modifiers["Boolean"].solver = 'FAST'
             bpy.context.object.modifiers["Boolean"].double_threshold = 0
 
-        bpy.ops.object.modifier_apply(modifier="Boolean")
+        if apply:
+            bpy.ops.object.modifier_apply(modifier="Boolean")
 
 
 def import_object_from_file(scene, new_name, orig_filename, orig_name,
@@ -451,7 +488,7 @@ def _decimate_dissolve(obj):
     modifier_name = 'decimate_dissolve'
     mod = obj.modifiers.new(modifier_name, 'DECIMATE')
     mod.decimate_type = 'DISSOLVE'
-    mod.angle_limit = 0.026  # 1.5 deg
+    mod.angle_limit = 0.07
     mod.use_dissolve_boundaries = False
 
 
@@ -652,31 +689,11 @@ def make_sat(scene):
     return sat
 
 
+PATHS_INIT_SUBSURF_LEVELS = 4
+
+
 def import_paths(scene, sat):
     log.info('importing paths...')
-    # extra stuff: paths
-    import_object_from_file(
-        scene,
-        'path_train__1',
-        pathlib.Path("/data/predeal1/google/tren/22/google-22-tren.blend"),
-        '300',
-        subsurf_levels=2,
-    )
-    import_object_from_file(
-        scene,
-        'path_train__2',
-        pathlib.Path("/data/predeal1/google/tren/22/google-22-tren.blend"),
-        '300.001',
-        subsurf_levels=2,
-    )
-
-    import_object_from_file(
-        scene,
-        'path_car__1',
-        pathlib.Path("/data/predeal1/google/tren/22/google-22-tren.blend"),
-        'Bulevardul Mihail Săulescu',
-        subsurf_levels=2,
-    )
 
     import_object_from_file(
         scene,
@@ -684,7 +701,7 @@ def import_paths(scene, sat):
         pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:highway',
         convert_to_curve=True,
-        subsurf_levels=2,
+        subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # shrinkwrap_to_plane='sat_18',
         shrinkwrap_to_planes=[s.name for s in sat.values()],
     )
@@ -694,7 +711,7 @@ def import_paths(scene, sat):
         'rails',
         pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
-        subsurf_levels=2,
+        subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         convert_to_curve=True,
         shrinkwrap_to_planes=[s.name for s in sat.values()],
     )
@@ -777,7 +794,7 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
     return ret_list
 
 
-def make_terrain(scene, camera_obj, make_trees=False):
+def make_terrain(scene, camera_obj, add_trees=False):
     log.info('creating terrain...')
     sat = make_sat(scene)
     keys = sorted(sat.keys())
@@ -802,8 +819,8 @@ def make_terrain(scene, camera_obj, make_trees=False):
                 }
             )
 
-            bpy.data.objects[sat[zoom].name].vertex_groups.new(name='paths')
-            geo_mods[zoom]["Output_2_attribute_name"] = "paths"
+            # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='paths')
+            # geo_mods[zoom]["Output_2_attribute_name"] = "paths"
 
             # bpy.data.objects[sat[zoom].name].vertex_groups.new(name='rails_prox')
             # geo_mods[zoom]["Output_6_attribute_name"] = "rails_prox"
@@ -820,21 +837,34 @@ def make_terrain(scene, camera_obj, make_trees=False):
     for outer_zoom, inner_zoom in zip(keys, keys[1:]):
         geo_mods[outer_zoom]['Input_5'] = bpy.data.objects[sat[inner_zoom].name]
 
-    # apply all the sat geo mods from above, including and what-have-you
-    # for zoom in sat:
-    #     sat_obj = bpy.data.objects[sat[zoom].name]
-    #     sat_obj.select_set(True)
-    #     bpy.context.view_layer.objects.active = sat_obj
+    # apply all the sat geo mods from above
+    for zoom in sat:
+        with make_active_object(sat[zoom].name) as sat_obj:
+            for mod in sat_obj.modifiers:
+                log.info(
+                    'applying modifier %s on object %s',
+                    mod.name.encode('ascii', 'backslashreplace').decode('ascii'),
+                    sat_obj.name,
+                )
+                bpy.ops.object.modifier_apply(modifier=mod.name)
 
-    #     for mod in sat_obj.modifiers:
-    #         log.info('applying modifier %s on object %s', mod.name.encode('ascii', 'backslashreplace').decode('ascii'), sat_obj.name)  # noqa
-    #         bpy.ops.object.modifier_apply(modifier=mod.name)
+    # terrain is reshaped; bring the buildings / paths
+    import_object_from_file(
+        scene,
+        'rails_center',
+        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        'Ways:railway',
+        subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
+        # convert_to_curve=True,
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
+    )
 
-    #     sat_obj.select_set(False)
+    # cut_object('rails_center', sat[list(sat.keys())[-1]].name + '__bbox', op='INTERSECT', apply=False)
 
-    building_object = load_buildings(scene, sat)
+    # apply buildings geometry node when loading, since we want adaptive subdivision
+    building_object = load_buildings(scene, sat, apply_mod=True)
 
-    if make_trees:
+    if add_trees:
         trees = make_trees(
             scene, camera_obj, sat,
             bpy.data.objects['roads'],
@@ -846,7 +876,7 @@ def make_terrain(scene, camera_obj, make_trees=False):
     # at the end, apply adaptive subdivision for all relevant objects
     # log.info('enabling adaptive subdivision...')
     # objects_for_adaptive_subdivision = \
-    #     [bpy.data.objects[sat[zoom].name] for zoom in sat] + [building_object] + trees
+    #     [bpy.data.objects[sat[zoom].name] for zoom in sat] + [building_object]
     # enable_adaptive_subdivision(objects_for_adaptive_subdivision)
 
     return sat
@@ -971,7 +1001,7 @@ def render_main():
     camera_obj.data.clip_end = CAMERA_CLIP_END
     bpy.context.scene.cycles.dicing_camera = camera_obj
 
-    make_terrain(scene, camera_obj)
+    make_terrain(scene, camera_obj, add_trees=True)
 
 # --- populate the scene with objects, lights, cameras
 # scene += kb.Cube(name="floor", scale=(10, 10, 0.1), position=(0, 0, -0.1))
@@ -980,46 +1010,115 @@ def render_main():
 #                              look_at=(0, 0, 0), intensity=1.5)
 
     log.info('creating keyframes...')
-    animation_path = 'path_car__1'
-    anim_height = 6
-
+    anim_distance = (MAX_FRAMES / SIMULATION_FPS) * CAMERA_ANIMATION_SPEED_M_S
+    anim_distance *= 2
+    anim_distance += 300
+    animation_path = 'rails_center'
     with make_active_object(animation_path):
-        for frame in range(scene.frame_start, scene.frame_end + 1):
-            # path coords for frame
-            x0, y0, z0 = bpy.context.active_object.data.vertices[frame].co.xyz.to_tuple()
-            x, y, z = bpy.context.active_object.data.vertices[frame + 1].co.xyz.to_tuple()
-            z0 += anim_height
-            z += anim_height
+        path_vertices = [
+            (d.index, (d.co.xyz.to_tuple()))
+            for d in bpy.context.active_object.data.vertices
+            if math.sqrt(
+                d.co.xyz.to_tuple()[0]**2 + d.co.xyz.to_tuple()[1]**2
+            ) < anim_distance
+        ]
+    index_count = [
+        i
+        for i, (x, y) in enumerate(
+            zip([a[0] for a in path_vertices[:-1]],
+                [a[0] for a in path_vertices[1:]])
+        )
+        if x + 1 != y
+    ]
+    index_count = [0] + index_count + [len(path_vertices)]
+    index_count = {index_count[k]: index_count[k + 1] - index_count[k]
+                   for k in range(0, len(index_count) - 1)}
+    start_idx, run_len = max(index_count.items(), key=lambda t: (t[1], random.random()))
+    path_point = [path_vertices[k][1]
+                  for k in range(1 + start_idx, start_idx + run_len + 1)
+                  if k < len(path_vertices)]
 
-            scene.camera.position = (x0 - 5, y0 + 5, z0 + 2)
-            scene.camera.look_at((x, y, z))
+    def _3d_dist(point, next_point):
+        return math.sqrt(
+            (point[0] - next_point[0])**2
+            + (point[1] - next_point[1])**2  # noqa
+            + (point[2] - next_point[2])**2  # noqa
+        )
 
-            scene.camera.keyframe_insert("position", frame)
-            scene.camera.keyframe_insert("quaternion", frame)
+    def _add_nan(points, avg_dist=1):
+        log.info('adding NaN to %s points, interp dist %s', len(points), avg_dist)
+        for point_id in range(0, len(points) - 1):
+            point = points[point_id]
+            next_point = points[point_id + 1]
+            next_point_dist = _3d_dist(point, next_point)
+            yield point
+            yield from [(numpy.nan, numpy.nan, numpy.nan)] * int(next_point_dist / avg_dist)
+        yield points[-1]
 
-            cube.position = (x, y, z)
-            # cube.look_at((0, 0, 0))
-            # cube.keyframe_insert("quaternion", frame)
-            cube.keyframe_insert("position", frame)
+    start_to_end_dist = _3d_dist(path_point[0], path_point[-1])
+    path_point = pandas.DataFrame(_add_nan(path_point, CAMERA_ANIMATION_SPEED_M_S / SIMULATION_FPS))
+    path_point = path_point.interpolate(method='linear', limit_area='inside')
+    path_point = [tuple(t[1]) for t in path_point.iterrows()]
+    assert len(path_point) > MAX_FRAMES + 40
+    path_mid_idx_offset = int((len(path_point) - MAX_FRAMES) / 2 + 15)
 
-            cube_light.position = (x, y, z)
-            cube_light.keyframe_insert("position", frame)
+    cube_height = 1
+    camera_height = 1.8
+    camera_distance = 20
+    camera_delay_count = int(camera_distance / (CAMERA_ANIMATION_SPEED_M_S / SIMULATION_FPS))
+    log.info('animation camera delay steps = %s', camera_delay_count)
+    if camera_delay_count > path_mid_idx_offset:
+        log.warning('not enough space in path for camera delay!')
+        camera_delay_count = path_mid_idx_offset
+    if camera_delay_count < 1:
+        log.warning('zero delay count! reset to 1')
+        camera_delay_count = 1
 
-    update_sky_texture()
+    for frame in range(scene.frame_start, scene.frame_end + 1):
+        # path coords for frame
+        x0, y0, z0 = path_point[frame + path_mid_idx_offset - camera_delay_count]
+        x, y, z = path_point[frame + path_mid_idx_offset]
+        x1, y1, z1 = path_point[frame + path_mid_idx_offset + 1]
+
+        z0 += camera_height
+        z += cube_height
+        z1 += cube_height
+
+        scene.camera.position = (x0, y0, z0)
+        scene.camera.look_at((x, y, z))
+
+        scene.camera.keyframe_insert("position", frame)
+        scene.camera.keyframe_insert("quaternion", frame)
+
+        cube.position = (x, y, z)
+        cube.look_at((x1, y1, z1))
+        cube.keyframe_insert("position", frame)
+        cube.keyframe_insert("quaternion", frame)
+
+        cube_light.position = (x + random.uniform(-0.1, 0.1),
+                               y + random.uniform(-0.1, 0.1),
+                               z + random.uniform(-0.1, 0.1))
+        cube_light.keyframe_insert("position", frame)
+
+    update_sky_texture('N', camera)
     # --- render (and save the blender file)
     save_blend(renderer, pack=True)
 
 # render and post-process
     log.info('starting render....')
     data_stack = renderer.render()
+    log.info('render done!')
 
+    log.info('started output...')
     subprocess.check_call('rm -rf output/pics/ || true', shell=True)
     kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
-
     kb.file_io.write_json(filename="output/pics/camera.json", data=kb.get_camera_info(scene.camera))
     kb.file_io.write_json(filename="output/pics/metadata.json", data=kb.get_scene_metadata(scene))
     kb.file_io.write_json(filename="output/pics/object.json", data=kb.get_instance_info(scene))
-    subprocess.check_call('bash make-gifs.sh', shell=True, stdout=subprocess.DEVNULL,
+    log.info('output done!')
+
+    log.info('making gifs...')
+    subprocess.check_call('bash make-gifs.sh', shell=True,
                           stderr=subprocess.DEVNULL)
 
     kb.done()
