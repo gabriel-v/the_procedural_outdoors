@@ -53,7 +53,7 @@ CAMERA_ENABLE_BACKFACE_CULLING = False
 SIMULATION_FPS = 24
 CAMERA_ANIMATION_SPEED_KMH = 60
 CAMERA_ANIMATION_SPEED_M_S = CAMERA_ANIMATION_SPEED_KMH / 3.6
-MAX_FRAMES = 24 * 6
+MAX_FRAMES = 12
 RESOLUTION_X = 512
 
 MAIN_BLEND_FILE = "output/trains.blend"
@@ -278,10 +278,11 @@ def _save_geometry_2(original_path, destination_path, skip_if_missing=True):
 
 
 def save_blend(renderer, destination=MAIN_BLEND_FILE, pack=False):
-    log.info('saving %s', destination)
+    log.info('----- > SAVING %s ... < ------', destination)
     if pack:
         bpy.ops.file.pack_all()
     renderer.save_state(destination)
+    log.info('----- > SAVED %s < ------', destination)
 
 
 def pre_init_blender(renderer):
@@ -295,6 +296,8 @@ def pre_init_blender(renderer):
 
     # compositor use opencl & buffering & medium quality
     bpy.context.scene.render.use_persistent_data = True
+
+    # TODO remove OpenCL to fix optical flow
     bpy.data.scenes["Scene"].node_tree.use_opencl = True
     bpy.data.scenes["Scene"].node_tree.use_groupnode_buffer = True
     bpy.data.scenes["Scene"].node_tree.render_quality = 'MEDIUM'
@@ -338,7 +341,7 @@ def pre_init_blender(renderer):
     bpy.context.scene.cycles.caustics_refractive = False
     bpy.context.scene.cycles.caustics_reflective = False
     # bpy.context.scene.cycles.use_fast_gi = True
-    bpy.context.scene.render.use_motion_blur = True
+    # bpy.context.scene.render.use_motion_blur = True
     bpy.context.scene.cycles.time_limit = RENDER_TIME_LIMIT
     bpy.context.scene.cycles.samples = SAMPLES_PER_PIXEL
     bpy.context.scene.cycles.preview_samples = SAMPLES_PER_PIXEL
@@ -488,8 +491,18 @@ def _decimate_dissolve(obj):
     modifier_name = 'decimate_dissolve'
     mod = obj.modifiers.new(modifier_name, 'DECIMATE')
     mod.decimate_type = 'DISSOLVE'
-    mod.angle_limit = 0.07
+    mod.angle_limit = 0.0174533
     mod.use_dissolve_boundaries = False
+    return mod
+
+
+def _triangulate_modifier(obj):
+    modifier_name = 'triangulate_beauty'
+    mod = obj.modifiers.new(modifier_name, 'TRIANGULATE')
+    # mod.keep_custom_normals = True
+    mod.ngon_method = 'BEAUTY'
+    mod.quad_method = 'BEAUTY'
+    return mod
 
 
 @contextlib.contextmanager
@@ -533,16 +546,14 @@ def load_random_trees_highpoly(tree_count=30):
 
     tree_blend_files = random.sample(tree_blend_files, tree_count)
 
-    tree_id_list = []
     with make_active_collection('trees_high_poly') as c:
         for blend_path in tree_blend_files:
             tree_id = blend_path.stem.split('-')[0][6:]
             tree = blend_append_object(blend_path, tree_id, active_collection=True)
             # tree.hide_render = True
             # tree.hide_viewport = True
-            tree_id_list.append(tree.name)
 
-    return tree_id_list, c
+    return c
 
 
 def load_buildings(scene, sat, apply_mod=False):
@@ -735,25 +746,46 @@ def load_lowpoly_vegetation(veg_type):
             "Tree-03-3",
             "Tree-03-4",
         ],
+        "bushes": [
+            "Bush-01",
+            "Bush-02",
+            "Bush-03",
+            "Bush-04",
+            "Bush-05",
+        ],
+        "weeds": [
+            "Clover-01",
+            "Clover-02",
+            "Clover-03",
+            "Clover-04",
+            "Clover-05",
+            "Grass-01",
+            "Grass-02",
+            "Grass-03",
+            "Flowers-01",
+            "Flowers-02",
+            "Flowers-03",
+            "Flowers-04",
+        ],
     }
-    tree_id_list = []
     with make_active_collection(veg_type + '_low_poly') as c:
         for obj_name in LOWPOLY_OBJECT_NAMES[veg_type]:
             tree = blend_append_object(LOWPOLY_VEG_FILE, obj_name, active_collection=True)
             # tree.hide_render = True
             # tree.hide_viewport = True
-            tree_id_list.append(tree.name)
 
-    return tree_id_list, c
+    return c
 
 
 def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=False):
     log.info('making trees...')
 
     if load_highpoly:
-        tree_list, trees_collection = load_random_trees_highpoly(RANDOM_TREE_COUNT)
+        trees_collection = load_random_trees_highpoly(RANDOM_TREE_COUNT)
     else:
-        tree_list, trees_collection = load_lowpoly_vegetation('trees')
+        trees_collection = load_lowpoly_vegetation('trees')
+        bushes_collection = load_lowpoly_vegetation('bushes')
+        weeds_collection = load_lowpoly_vegetation('weeds')
 
     ret_list = []
     for zoom in sat:
@@ -766,7 +798,7 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
         # scene += obj
         # scene += kb.Cube(name=veg_id, scale=(1, 1, 1), position=(0, 0, 0))
 
-        with make_active_collection(obj.name):
+        with make_active_object(obj.name):
             # obj.hide_render = True
             # obj.hide_viewport = True
 
@@ -782,6 +814,8 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
                     "Input_6": roads,
                     "Input_7": rails,
                     "Input_8": buildings,
+                    "Input_10": bushes_collection,
+                    "Input_11": weeds_collection,
                     # "Input_4_attribute_name": 'paths',
                 },
             )
@@ -833,20 +867,10 @@ def make_terrain(scene, camera_obj, add_trees=False):
 
             # after geometry, do a decimate with a low angle to reduce redundant faces
             _decimate_dissolve(bpy.data.objects[sat[zoom].name])
+            _triangulate_modifier(bpy.data.objects[sat[zoom].name])
 
     for outer_zoom, inner_zoom in zip(keys, keys[1:]):
         geo_mods[outer_zoom]['Input_5'] = bpy.data.objects[sat[inner_zoom].name]
-
-    # apply all the sat geo mods from above
-    for zoom in sat:
-        with make_active_object(sat[zoom].name) as sat_obj:
-            for mod in sat_obj.modifiers:
-                log.info(
-                    'applying modifier %s on object %s',
-                    mod.name.encode('ascii', 'backslashreplace').decode('ascii'),
-                    sat_obj.name,
-                )
-                bpy.ops.object.modifier_apply(modifier=mod.name)
 
     # terrain is reshaped; bring the buildings / paths
     import_object_from_file(
@@ -864,11 +888,52 @@ def make_terrain(scene, camera_obj, add_trees=False):
     # apply buildings geometry node when loading, since we want adaptive subdivision
     building_object = load_buildings(scene, sat, apply_mod=True)
 
+    # now that we have buildings, we can finalize terrain height with buildings
+    for zoom in keys:
+        geo_mods[zoom]['Input_9'] = bpy.data.objects[building_object.name]
+
+    # apply all the sat geo mods from above
+    for zoom in sat:
+        with make_active_object(sat[zoom].name) as sat_obj:
+            for mod in sat_obj.modifiers:
+                log.info(
+                    'applying modifier %s on object %s',
+                    mod.name.encode('ascii', 'backslashreplace').decode('ascii'),
+                    sat_obj.name,
+                )
+                bpy.ops.object.modifier_apply(modifier=mod.name)
+    geo_mods = {}
+
+    # add geom modifiers to get prox to various things, output vertex group floats
+    # roads range 5m
+    # rails range 4m
+    # building range 3m
+
+    for zoom in sat:
+        with make_active_object(sat[zoom].name) as sat_obj:
+            sat_obj.vertex_groups.new(name='rails_prox')
+            sat_obj.vertex_groups.new(name='roads_prox')
+            sat_obj.vertex_groups.new(name='buildings_prox')
+            new_geometry_modifier(
+                sat_obj.name,
+                'set_proximity_vertex_groups',
+                'set_proximity_vertex_groups',
+                {
+                    'Input_2': bpy.data.objects["rails"],
+                    'Input_4': bpy.data.objects["roads"],
+                    'Input_6': bpy.data.objects["buildings"],
+                    "Output_3_attribute_name": 'rails_prox',
+                    "Output_5_attribute_name": 'roads_prox',
+                    "Output_7_attribute_name": 'buildings_prox',
+                }
+            )
+
     if add_trees:
-        trees = make_trees(
+        make_trees(
             scene, camera_obj, sat,
             bpy.data.objects['roads'],
-            bpy.data.objects['rails'], building_object,
+            bpy.data.objects['rails'],
+            building_object,
         )
 
     # make_view_culling_geonodes(sat, camera_obj)
