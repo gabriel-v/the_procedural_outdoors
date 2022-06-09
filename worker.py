@@ -1066,7 +1066,7 @@ def render_main():
     camera_obj.data.clip_end = CAMERA_CLIP_END
     bpy.context.scene.cycles.dicing_camera = camera_obj
 
-    make_terrain(scene, camera_obj, add_trees=True)
+    make_terrain(scene, camera_obj, add_trees=False)
 
 # --- populate the scene with objects, lights, cameras
 # scene += kb.Cube(name="floor", scale=(10, 10, 0.1), position=(0, 0, -0.1))

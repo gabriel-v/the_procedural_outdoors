@@ -7,9 +7,9 @@ SHMEM=10g
 
 docker build . --tag $DOCKER_IMAGE
 
+           # -e KUBRIC_USE_GPU=t \
 mkdir -p .docker.tmp
 docker run --rm -it  \
-           -e KUBRIC_USE_GPU=t \
             --user $(id -u):$(id -g) \
            -m $MEM --memory-swap=$MEM \
         --shm-size=$SHMEM \
