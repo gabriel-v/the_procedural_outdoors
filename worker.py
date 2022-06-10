@@ -53,7 +53,7 @@ CAMERA_ENABLE_BACKFACE_CULLING = False
 SIMULATION_FPS = 24
 CAMERA_ANIMATION_SPEED_KMH = 60
 CAMERA_ANIMATION_SPEED_M_S = CAMERA_ANIMATION_SPEED_KMH / 3.6
-MAX_FRAMES = 12
+MAX_FRAMES = 40
 RESOLUTION_X = 512
 
 MAIN_BLEND_FILE = "output/trains.blend"
@@ -92,7 +92,7 @@ def update_sky_texture(sky_texture='P', camera=None):
         bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].ozone_density = random.uniform(0.2, 6)
 
 
-def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict,
+def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict=dict(),
                           show_viewport=True):
     log.info('adding new geometry modifier obj = %s type = %s ...', object_name, node_group_name)
     mod = bpy.data.objects[object_name].modifiers.new(modifier_name, 'NODES')
@@ -873,6 +873,8 @@ def make_terrain(scene, camera_obj, add_trees=False):
         geo_mods[outer_zoom]['Input_5'] = bpy.data.objects[sat[inner_zoom].name]
 
     # terrain is reshaped; bring the buildings / paths
+
+    # rails_center -- used for animating the camera
     import_object_from_file(
         scene,
         'rails_center',
@@ -885,8 +887,54 @@ def make_terrain(scene, camera_obj, add_trees=False):
 
     # cut_object('rails_center', sat[list(sat.keys())[-1]].name + '__bbox', op='INTERSECT', apply=False)
 
+    # make rail tracks
+    import_object_from_file(
+        scene,
+        'rails_tracks_object',
+        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        'Ways:railway',
+        subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
+        # convert_to_curve=True,
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
+    )
+    new_geometry_modifier(
+        'rails_tracks_object',
+        'make_rail_tracks',
+        'make_rail_tracks',
+    )
+
+    # make rail planks and bolts and shit
+    import_object_from_file(
+        scene,
+        'rails_planks_object',
+        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        'Ways:railway',
+        subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
+        # convert_to_curve=True,
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
+    )
+    new_geometry_modifier(
+        'rails_planks_object',
+        'make_rail_planks',
+        'make_rail_planks',
+        {
+            'Input_2': camera_obj,
+        }
+    )
+
+    # make rail electric poles & signals
+    import_object_from_file(
+        scene,
+        'rails_electric_poles_object',
+        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        'Ways:railway',
+        subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
+        # convert_to_curve=True,
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
+    )
+
     # apply buildings geometry node when loading, since we want adaptive subdivision
-    building_object = load_buildings(scene, sat, apply_mod=True)
+    building_object = load_buildings(scene, sat, apply_mod=False)
 
     # now that we have buildings, we can finalize terrain height with buildings
     for zoom in keys:
@@ -914,6 +962,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
             sat_obj.vertex_groups.new(name='rails_prox')
             sat_obj.vertex_groups.new(name='roads_prox')
             sat_obj.vertex_groups.new(name='buildings_prox')
+            sat_obj.vertex_groups.new(name="map_UV_1m")
             new_geometry_modifier(
                 sat_obj.name,
                 'set_proximity_vertex_groups',
@@ -925,6 +974,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
                     "Output_3_attribute_name": 'rails_prox',
                     "Output_5_attribute_name": 'roads_prox',
                     "Output_7_attribute_name": 'buildings_prox',
+                    "Output_8_attribute_name": 'map_UV_1m',
                 }
             )
 
@@ -1040,7 +1090,8 @@ def render_main():
     scene = kb.Scene(resolution=(RESOLUTION_X, RESOLUTION_X), frame_start=1, frame_end=MAX_FRAMES)
     renderer = Blender(
         scene, custom_scene=CUBE_BG, custom_scene_shading=True,
-        adaptive_sampling=True, samples_per_pixel=SAMPLES_PER_PIXEL)
+        adaptive_sampling=True, samples_per_pixel=SAMPLES_PER_PIXEL,
+    )
 
     pre_init_blender(renderer)
 
@@ -1171,7 +1222,11 @@ def render_main():
 
 # render and post-process
     log.info('starting render....')
-    data_stack = renderer.render()
+    data_stack = renderer.render(
+        return_layers=(
+            "rgba", "depth", "segmentation", "normal",
+        ),
+    )
     log.info('render done!')
 
     log.info('started output...')

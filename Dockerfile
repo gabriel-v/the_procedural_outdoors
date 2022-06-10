@@ -1,4 +1,4 @@
-FROM gabrielv/kubruntudev:blender312
+FROM gabrielv/kubruntudev:blender320-release
 
 ENV PYTHONUNBUFFERED=1
 
