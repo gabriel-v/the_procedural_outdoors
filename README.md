@@ -1,0 +1,1 @@
+# Outdoor scene rendering
