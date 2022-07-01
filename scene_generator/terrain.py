@@ -307,8 +307,47 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
     return ret_list
 
 
+def load_props(scene):
+    with make_active_collection('prop_objects') as c:
+        import_object_from_file(
+            scene,
+            'prop_train_sign_blank',
+            pathlib.Path("output/powerlines/really-good/train-sign-blank.blend"),
+            'train-sign-blank',
+        )
+        # fix damn scaling bug
+        # with make_active_object('prop_train_sign_blank') as _:
+        #     bpy.ops.transform.resize(value=(0.0156971, 0.0156971, 0.0156971), orient_type='GLOBAL')
+
+        import_object_from_file(
+            scene,
+            'prop_street_sign_blank',
+            pathlib.Path("output/powerlines/good/street-road-signs-blank.blend"),
+            'round-sign',
+        )
+        # with make_active_object('prop_street_sign_blank') as _:
+        #     bpy.ops.transform.rotate(value=-1.56006, orient_axis='Z')
+
+        import_object_from_file(
+            scene,
+            'prop_steet_light',
+            pathlib.Path("output/powerlines/good/street-light-pole.blend"),
+            'street-light',
+        )
+
+        import_object_from_file(
+            scene,
+            'prop_steet_power_line',
+            pathlib.Path("output/powerlines/good/street-pole-power-line.blend"),
+            'tower1',
+        )
+        # with make_active_object('prop_steet_power_line') as _:
+        #     bpy.ops.transform.resize(value=(1, 0.024, 0.079), orient_type='GLOBAL')
+
+
 def make_terrain(scene, camera_obj, add_trees=False):
     log.info('creating terrain...')
+    load_props(scene)
     sat = make_sat(scene)
     keys = sorted(sat.keys())
     import_paths(scene, sat)
@@ -404,12 +443,43 @@ def make_terrain(scene, camera_obj, add_trees=False):
     # make rail electric poles & signals
     import_object_from_file(
         scene,
-        'rails_electric_poles_object',
+        'props_rails_signs',
         pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
         shrinkwrap_to_planes=[s.name for s in sat.values()],
+    )
+    new_geometry_modifier(
+        'props_rails_signs',
+        'make_rails_signs',
+        'make_rails_signs',
+        {
+            'Input_2': camera_obj,
+            'Input_7': bpy.data.objects['prop_train_sign_blank'],
+        }
+    )
+
+    # make road electric poles & signals
+    import_object_from_file(
+        scene,
+        'props_road_signals',
+        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        'Ways:highway',
+        subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
+        # convert_to_curve=True,
+        shrinkwrap_to_planes=[s.name for s in sat.values()],
+    )
+    new_geometry_modifier(
+        'props_road_signals',
+        'make_street_signs',
+        'make_street_signs',
+        {
+            'Input_2': camera_obj,
+            'Input_5': bpy.data.objects['prop_street_sign_blank'],
+            'Input_6': bpy.data.objects['prop_steet_light'],
+            'Input_7': bpy.data.objects['prop_steet_power_line'],
+        }
     )
 
     # apply buildings geometry node when loading, since we want adaptive subdivision

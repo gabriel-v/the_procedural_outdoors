@@ -178,6 +178,7 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
     """save is important to check for bad objects"""
 
     log.info("Importing object from file: %s -> %s ...", orig_name, new_name)
+    assert pathlib.Path(orig_filename).is_file(), 'file not found'
     cube = kb.FileBasedObject(
         name=new_name,
         position=(0, 0, 0.0),
@@ -190,6 +191,7 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
             "directory": str(orig_filename / "Object"),
             "filename": orig_name,
         })
+    assert cube is not None, 'object not found'
     if not exclude_from_scene:
         scene += cube
 
