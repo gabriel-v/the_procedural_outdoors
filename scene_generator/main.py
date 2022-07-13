@@ -1,3 +1,4 @@
+import time
 import numpy
 import pandas
 import math
@@ -84,7 +85,7 @@ def render_main():
 
     # ### TERRAIN ####
     # ================
-    terrain.make_terrain(scene, camera_obj, add_trees=False)
+    terrain.make_terrain(scene, camera_obj, add_trees=True)
 
 # --- populate the scene with objects, lights, cameras
 # scene += kb.Cube(name="floor", scale=(10, 10, 0.1), position=(0, 0, -0.1))
@@ -147,8 +148,8 @@ def render_main():
     path_mid_idx_offset = int((len(path_point) - settings.MAX_FRAMES) / 2 + 15)
 
     cube_height = 1
-    camera_height = 1.8
-    camera_distance = 20
+    camera_height = 15
+    camera_distance = 50
     camera_delay_count = int(
         camera_distance / (
             settings.CAMERA_ANIMATION_SPEED_M_S / settings.SIMULATION_FPS
@@ -194,12 +195,23 @@ def render_main():
 
 # render and post-process
     log.info('starting render....')
+    t0 = time.time()
     data_stack = renderer.render(
         return_layers=(
             "rgba", "depth", "segmentation", "normal",
         ),
     )
-    log.info('render done!')
+    t1 = time.time()
+    dt = round((t1 - t0) / settings.MAX_FRAMES, 2)
+    log.info(f""" render done! {dt} sec/frame
+             ==============================
+             =                            =
+             =         RENDER SPEED       =
+             =          {dt}           =
+             =          sec/frame         =
+             =                            =
+             ==============================
+             """)
 
     log.info('started output...')
     subprocess.check_call('rm -rf output/pics/ || true', shell=True)
