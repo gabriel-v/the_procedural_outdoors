@@ -20,7 +20,7 @@ GEOMETRY_TMP_FILE = 'output/tmp-saved-geometry.blend'
 
 
 def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict=dict(),
-                          show_viewport=True):
+                          show_viewport=True, toggle_inputs=[]):
     log.info('adding new geometry modifier obj = %s type = %s ...', object_name, node_group_name)
     mod = bpy.data.objects[object_name].modifiers.new(modifier_name, 'NODES')
     mod.node_group = bpy.data.node_groups[node_group_name]
@@ -31,6 +31,12 @@ def new_geometry_modifier(object_name, modifier_name, node_group_name, args_dict
         bpy.data.objects[object_name].update_tag()
 
     mod.show_viewport = show_viewport
+    for input_to_toggle in toggle_inputs:
+        prop_path = '["' + input_to_toggle + '"]'
+        bpy.ops.object.geometry_nodes_input_attribute_toggle(
+            prop_path=prop_path,
+            modifier_name=mod.name,
+        )
     return mod
 
 

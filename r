@@ -6,4 +6,4 @@ end=`date +%s`
 runtime=$((end-start))
 
 ( nohup xdg-open output > /dev/null & ) || true
-( notify-send "RENDER DONE" "RENDER DONE IN $runtime" ) || true
+( notify-send "Outdoors Render Done" "render done in $runtime sec" ) || true

@@ -266,44 +266,109 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
         bushes_collection = load_lowpoly_vegetation('bushes')
         weeds_collection = load_lowpoly_vegetation('weeds')
 
+    tree_types = {
+        "trees": {
+            "id": 1,
+            "scale": 2.6,
+            "dist_min": 14,
+            "density_max": 0.4,
+            "density_factor": 0.13,
+            "collection": trees_collection,
+        },
+        "bushes": {
+            "id": 2,
+            "scale": 1.3,
+            "dist_min": 6,
+            "density_max": 0.3,
+            "density_factor": 0.12,
+            "collection": bushes_collection,
+        },
+        "weeds": {
+            "id": 3,
+            "scale": 1.1,
+            "dist_min": 3,
+            "density_max": 0.34,
+            "density_factor": 0.11,
+            "collection": weeds_collection,
+        },
+    }
+
     ret_list = []
     for zoom in sat:
-        sat_obj = bpy.data.objects[sat[zoom].name]
-        bpy.ops.object.duplicate(
-            {"object": sat_obj,
-                "selected_objects": [sat_obj]},)
-        obj = bpy.data.objects[sat_obj.name + '.001']
-        obj.name = sat[zoom].name + '__vegetation'
-        # scene += obj
-        # scene += kb.Cube(name=veg_id, scale=(1, 1, 1), position=(0, 0, 0))
+        for tree_type_name, tree_type_params in tree_types.items():
+            sat_obj = bpy.data.objects[sat[zoom].name]
+            bpy.ops.object.duplicate(
+                {"object": sat_obj,
+                    "selected_objects": [sat_obj]},)
+            obj = bpy.data.objects[sat_obj.name + '.001']
+            obj.name = sat[zoom].name + '__vegetation__' + tree_type_name
+            # scene += obj
+            # scene += kb.Cube(name=veg_id, scale=(1, 1, 1), position=(0, 0, 0))
 
-        with make_active_object(obj.name):
-            # obj.hide_render = True
-            # obj.hide_viewport = True
+            with make_active_object(obj.name):
+                # obj.hide_render = True
+                # obj.hide_viewport = True
 
-            log.info('adding vegetation geometry modifier on zoom level %s...', zoom)
-            g1 = new_geometry_modifier(
-                obj.name,
-                'iarbă',
-                'Iarbă',
-                {
-                    "Input_2": camera_obj,
-                    "Input_3": trees_collection,
-                    "Input_5": sat_obj,
-                    "Input_6": roads,
-                    "Input_7": rails,
-                    "Input_8": buildings,
-                    "Input_10": bushes_collection,
-                    "Input_11": weeds_collection,
-                    # "Input_4_attribute_name": 'paths',
-                },
-            )
-            # bpy.ops.object.geometry_nodes_input_attribute_toggle(
-            #     prop_path="[\"Input_4_use_attribute\"]",
-            #     modifier_name=g1.name,
-            # )
+                log.info('adding vegetation geometry modifier on zoom level %s...', zoom)
+                obj.vertex_groups.new(name='scatter_point_normal')
+                obj.vertex_groups.new(name='scatter_point_rot')
+                obj.vertex_groups.new(name='scatter_point_ID')
+                g1 = new_geometry_modifier(
+                    obj.name,
+                    'ScatterPoints',
+                    'ScatterPoints',
+                    {
+                        "Input_4": 666,  # seed
+                        "Input_6": tree_type_params['dist_min'],  # distance min
+                        "Input_7": tree_type_params['density_max'],  # density max
+                        "Input_8": tree_type_params['density_factor'],  # density factor
+                        "Input_12": tree_type_params['id'],  # value
+                        "Input_19_attribute_name": "roads_prox",
+                        "Input_20_attribute_name": "rails_prox",
+                        "Input_21_attribute_name": "buildings_prox",
+                        "Output_10_attribute_name": 'scatter_point_normal',
+                        "Output_11_attribute_name": 'scatter_point_rot',
+                        "Output_13_attribute_name": 'scatter_point_ID',
+                    },
+                    toggle_inputs=[
+                        "Input_19_use_attribute",
+                        "Input_20_use_attribute",
+                        "Input_21_use_attribute",
+                    ],
+                )
 
-            ret_list.append(obj)
+                for mod in obj.modifiers:
+                    log.info(
+                        'applying modifier %s on object %s',
+                        mod.name.encode('ascii', 'backslashreplace').decode('ascii'),
+                        obj.name,
+                    )
+                    bpy.ops.object.modifier_apply(modifier=mod.name)
+                g2 = new_geometry_modifier(
+                    obj.name,
+                    'SpawnInstances',
+                    'SpawnInstances',
+                    {
+                        "Input_1": tree_type_params['collection'],
+                        "Input_4": 666,  # seed
+                        "Input_5": tree_type_params['scale'],
+                        "Input_9": camera_obj,
+                        "Input_10_attribute_name": "scatter_point_normal",
+                        "Input_11_attribute_name": "scatter_point_rot",
+                        "Input_12_attribute_name": "scatter_point_ID",
+                    },
+                    toggle_inputs=[
+                        "Input_10_use_attribute",
+                        "Input_11_use_attribute",
+                        "Input_12_use_attribute",
+                    ],
+                )
+                # bpy.ops.object.geometry_nodes_input_attribute_toggle(
+                #     prop_path="[\"Input_4_use_attribute\"]",
+                #     modifier_name=g1.name,
+                # )
+
+                ret_list.append(obj)
     return ret_list
 
 
