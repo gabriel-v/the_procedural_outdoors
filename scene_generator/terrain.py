@@ -5,6 +5,7 @@ import pathlib
 log = logging.getLogger(__name__)
 
 import bpy
+from kubric.core import BlenderObjectAsset
 
 from .geometry import new_geometry_modifier
 from .geometry import import_geometry_cube
@@ -44,6 +45,7 @@ def load_buildings(scene, sat, apply_mod=False):
         pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Areas:building',
         shrinkwrap_to_planes=[s.name for s in sat.values()],
+        segmentation_id=settings.SEGMENTATION_IDS['building'],
     )
     with make_active_object('buildings') as obj:
         obj.vertex_groups.new(name='building__top')
@@ -87,6 +89,7 @@ def make_sat(scene):
             # triangulate=True,
             # bbox_scale_z=2, bbox_scale_xy=0.5,
             # get_geo_extents=True,
+            segmentation_id=settings.SEGMENTATION_IDS['terrain'],
         )
     keys = sorted(sat.keys())
 
@@ -269,7 +272,7 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
     tree_types = {
         "trees": {
             "id": 1,
-            "scale": 2.6,
+            "scale": 2.2,
             "dist_min": 14,
             "density_max": 0.4,
             "density_factor": 0.13,
@@ -295,6 +298,9 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
 
     ret_list = []
     for zoom in sat:
+        if zoom < 17:
+            log.info('skipping zoom level = %s, too many trees', zoom)
+            continue
         for tree_type_name, tree_type_params in tree_types.items():
             sat_obj = bpy.data.objects[sat[zoom].name]
             bpy.ops.object.duplicate(
@@ -302,7 +308,7 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
                     "selected_objects": [sat_obj]},)
             obj = bpy.data.objects[sat_obj.name + '.001']
             obj.name = sat[zoom].name + '__vegetation__' + tree_type_name
-            # scene += obj
+            scene += BlenderObjectAsset(blender_object=obj, name=obj.name)
             # scene += kb.Cube(name=veg_id, scale=(1, 1, 1), position=(0, 0, 0))
 
             with make_active_object(obj.name):
@@ -479,6 +485,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
         shrinkwrap_to_planes=[s.name for s in sat.values()],
+        segmentation_id=settings.SEGMENTATION_IDS['rails_metal'],
     )
     new_geometry_modifier(
         'rails_tracks_object',
@@ -495,6 +502,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
         shrinkwrap_to_planes=[s.name for s in sat.values()],
+        segmentation_id=settings.SEGMENTATION_IDS['rails_planks'],
     )
     new_geometry_modifier(
         'rails_planks_object',
@@ -514,6 +522,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
         shrinkwrap_to_planes=[s.name for s in sat.values()],
+        segmentation_id=settings.SEGMENTATION_IDS['signs'],
     )
     new_geometry_modifier(
         'props_rails_signs',
@@ -534,6 +543,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
         shrinkwrap_to_planes=[s.name for s in sat.values()],
+        segmentation_id=settings.SEGMENTATION_IDS['signs'],
     )
     new_geometry_modifier(
         'props_road_signals',

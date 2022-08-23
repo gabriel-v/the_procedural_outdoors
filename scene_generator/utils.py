@@ -174,7 +174,8 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
                             bbox_scale_z=None, bbox_scale_xy=1,
                             get_geo_extents=False, convert_to_curve=False,
                             shrinkwrap_to_planes=None, exclude_from_scene=False,
-                            subsurf_levels=None):
+                            subsurf_levels=None,
+                            segmentation_id=None):
     """save is important to check for bad objects"""
 
     log.info("Importing object from file: %s -> %s ...", orig_name, new_name)
@@ -192,6 +193,8 @@ def import_object_from_file(scene, new_name, orig_filename, orig_name,
             "filename": orig_name,
         })
     assert cube is not None, 'object not found'
+    if segmentation_id is not None:
+        cube.segmentation_id = segmentation_id
     if not exclude_from_scene:
         scene += cube
 

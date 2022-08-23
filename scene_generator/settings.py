@@ -1,5 +1,5 @@
 RESOLUTION_X = 400
-MAX_FRAMES = 24 * 5
+MAX_FRAMES = 24*10
 
 RANDOM_TREE_COUNT = 20
 
@@ -24,3 +24,12 @@ GEOMETRY_INPUT_FILE = 'output/trains.blend'
 # GEOMETRY_INPUT_FILE = 'cube/tmp/geometry.blend'
 GEOMETRY_SAVE_FILE = 'cube/geometry.blend'
 # GEOMETRY_SAVE_FILE_2 = 'cube/saved-geometry-2.blend'
+
+SEGMENTATION_IDS = {
+    "building": 1,
+    "terrain": 2,
+    "vegetation": 3,
+    "rails_metal": 4,
+    "rails_planks": 5,
+    "signs": 6,
+}

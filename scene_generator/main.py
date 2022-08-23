@@ -5,7 +5,7 @@ import math
 import random
 import subprocess
 import logging
-import pathlib
+# import pathlib
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ import bpy
 from .utils import pre_init_blender
 from .utils import save_blend
 from .utils import make_active_object
-from .utils import import_object_from_file
+# from .utils import import_object_from_file
 from .utils import load_addons
 from . import geometry
 from . import settings
@@ -65,12 +65,12 @@ def render_main():
 # ============
 
 # pos = .object.matrix_world.to_translation()
-    CUBE_FG = pathlib.Path("cube/cube.blend")
-    cube = import_object_from_file(scene, "Cube0", CUBE_FG, "Cube")
-    cube.position = (0, 0, 1100)
+    # CUBE_FG = pathlib.Path("cube/cube.blend")
+    # cube = import_object_from_file(scene, "Cube0", CUBE_FG, "Cube")
+    # cube.position = (0, 0, 1100)
 
-    cube_light = kb.PointLight(name="cube_light", position=(0, 0, 1100), intensity=6666)
-    scene += cube_light
+    # cube_light = kb.PointLight(name="cube_light", position=(0, 0, 1100), intensity=6666)
+    # scene += cube_light
 
 # ### CAMERA ####
 # ============
@@ -179,15 +179,15 @@ def render_main():
         scene.camera.keyframe_insert("position", frame)
         scene.camera.keyframe_insert("quaternion", frame)
 
-        cube.position = (x, y, z)
-        cube.look_at((x1, y1, z1))
-        cube.keyframe_insert("position", frame)
-        cube.keyframe_insert("quaternion", frame)
+        # cube.position = (x, y, z)
+        # cube.look_at((x1, y1, z1))
+        # cube.keyframe_insert("position", frame)
+        # cube.keyframe_insert("quaternion", frame)
 
-        cube_light.position = (x + random.uniform(-0.1, 0.1),
-                               y + random.uniform(-0.1, 0.1),
-                               z + random.uniform(-0.1, 0.1))
-        cube_light.keyframe_insert("position", frame)
+        # cube_light.position = (x + random.uniform(-0.1, 0.1),
+        #                        y + random.uniform(-0.1, 0.1),
+        #                        z + random.uniform(-0.1, 0.1))
+        # cube_light.keyframe_insert("position", frame)
 
     update_sky_texture('N', camera)
     # --- render (and save the blender file)
@@ -212,6 +212,15 @@ def render_main():
              =                            =
              ==============================
              """)
+
+    log.info('started post-processing...')
+    # --- Postprocessing
+    kb.compute_visibility(data_stack["segmentation"], scene.assets)
+
+    data_stack["segmentation"] = kb.adjust_segmentation_idxs(
+        data_stack["segmentation"],
+        scene.assets,
+        scene.assets)
 
     log.info('started output...')
     subprocess.check_call('rm -rf output/pics/ || true', shell=True)
