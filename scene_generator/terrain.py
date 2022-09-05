@@ -70,6 +70,9 @@ def load_buildings(scene, sat, apply_mod=False):
 
         if apply_mod:
             bpy.ops.object.modifier_apply(modifier=g1.name)
+    bpy.data.materials["BrickMaterial"].node_tree.nodes["Attribute"].attribute_name = "building__wall_uv"
+    bpy.data.materials["BrickMaterial.001"].node_tree.nodes["Attribute"].attribute_name = "building__top_uv"
+
     return obj
 
 
@@ -308,7 +311,10 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
                     "selected_objects": [sat_obj]},)
             obj = bpy.data.objects[sat_obj.name + '.001']
             obj.name = sat[zoom].name + '__vegetation__' + tree_type_name
-            scene += BlenderObjectAsset(blender_object=obj, name=obj.name)
+            scene += BlenderObjectAsset(blender_object=obj, name=obj.name,
+                                        position=obj.location.to_tuple(),
+                                        quaternion=obj.rotation_quaternion[0:4],
+                                        segmentation_id=settings.SEGMENTATION_IDS['vegetation'],)
             # scene += kb.Cube(name=veg_id, scale=(1, 1, 1), position=(0, 0, 0))
 
             with make_active_object(obj.name):

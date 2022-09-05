@@ -10,7 +10,7 @@ mkdir -p output/vid
 
 ls output/pics/rgba_* | grep rgba_ | cut -d_ -f2 | cut -d. -f1 | \
 	xargs -I{} -n1 -P8 --verbose \
-	montage -font DejaVu-Sans-Mono -label %t -tile 2x2 -geometry 333x333 \
+	montage -font DejaVu-Sans-Mono -label %t -tile 2x3 -geometry 480x270 \
 	output/pics/*_{}.png output/pics/concat_{}.png
 
 echo "montage done"

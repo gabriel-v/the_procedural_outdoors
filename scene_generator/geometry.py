@@ -117,7 +117,7 @@ def _save_geometry_1(original_path, destination_path, skip_if_missing=True):
         return
     log.info('running _save_geometry_1()')
 
-    scene = kb.Scene(resolution=(settings.RESOLUTION_X, settings.RESOLUTION_X),
+    scene = kb.Scene(resolution=(settings.RESOLUTION_X, settings.RESOLUTION_Y),
                      frame_start=1, frame_end=settings.MAX_FRAMES)
     renderer = Blender(
         scene, custom_scene=original_path, custom_scene_shading=True,
@@ -166,7 +166,7 @@ def _save_geometry_2(original_path, destination_path, skip_if_missing=True):
         return
     log.info('running _save_geometry_2()')
 
-    scene = kb.Scene(resolution=(settings.RESOLUTION_X, settings.RESOLUTION_X),
+    scene = kb.Scene(resolution=(settings.RESOLUTION_X, settings.RESOLUTION_Y),
                      frame_start=1, frame_end=settings.MAX_FRAMES)
     renderer = Blender(scene, adaptive_sampling=True, samples_per_pixel=settings.SAMPLES_PER_PIXEL)
 

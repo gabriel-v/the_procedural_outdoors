@@ -1,3 +1,4 @@
+import os
 import time
 import numpy
 import pandas
@@ -52,7 +53,7 @@ def render_main():
     CUBE_BG = "cube/background.blend"
 
 # --- create scene and attach a renderer to it
-    scene = kb.Scene(resolution=(settings.RESOLUTION_X, settings.RESOLUTION_X), frame_start=1,
+    scene = kb.Scene(resolution=(settings.RESOLUTION_X, settings.RESOLUTION_Y), frame_start=1,
                      frame_end=settings.MAX_FRAMES)
     renderer = Blender(
         scene, custom_scene=CUBE_BG, custom_scene_shading=True,
@@ -148,8 +149,8 @@ def render_main():
     path_mid_idx_offset = int((len(path_point) - settings.MAX_FRAMES) / 2 + 15)
 
     cube_height = 1
-    camera_height = 15
-    camera_distance = 50
+    camera_height = 2
+    camera_distance = 20
     camera_delay_count = int(
         camera_distance / (
             settings.CAMERA_ANIMATION_SPEED_M_S / settings.SIMULATION_FPS
@@ -170,8 +171,19 @@ def render_main():
         x1, y1, z1 = path_point[frame + path_mid_idx_offset + 1]
 
         z0 += camera_height
+        z += camera_height / 2.7
         z += cube_height
         z1 += cube_height
+
+        # scene look randomization
+        RANDOM_AMOUNT = 4
+        x0 += random.uniform(-RANDOM_AMOUNT, RANDOM_AMOUNT)
+        y0 += random.uniform(-RANDOM_AMOUNT, RANDOM_AMOUNT)
+        z0 += random.uniform(0, RANDOM_AMOUNT / 2)
+
+        x += random.uniform(-RANDOM_AMOUNT / 2, RANDOM_AMOUNT / 2)
+        y += random.uniform(-RANDOM_AMOUNT / 2, RANDOM_AMOUNT / 2)
+        z += random.uniform(-1, 1)
 
         scene.camera.position = (x0, y0, z0)
         scene.camera.look_at((x, y, z))
@@ -215,16 +227,33 @@ def render_main():
 
     log.info('started post-processing...')
     # --- Postprocessing
-    kb.compute_visibility(data_stack["segmentation"], scene.assets)
-
-    data_stack["segmentation"] = kb.adjust_segmentation_idxs(
-        data_stack["segmentation"],
-        scene.assets,
-        scene.assets)
+    # kb.compute_visibility(data_stack["segmentation"], scene.assets)
+    # data_stack["segmentation-2"] = kb.adjust_segmentation_idxs(
+    #     data_stack["segmentation"],
+    #     scene.assets,
+    #     scene.assets)
 
     log.info('started output...')
+
     subprocess.check_call('rm -rf output/pics/ || true', shell=True)
+    os.makedirs('output/pics/segmentation', exist_ok=True)
     kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
+    for i in range(0, data_stack['segmentation'].max()):
+        # palette = [[0, 0, 0], [255, 255, 255]]
+        kb.file_io.multi_write_image(
+            (data_stack['segmentation'] == i).astype(numpy.uint32),
+            "output/pics/segmentation/item_" + str(i) + "_{:05d}.png",
+            write_fn=kb.write_palette_png,
+            max_write_threads=6,
+            # palette=palette,
+        )
+    kb.file_io.multi_write_image(
+        (data_stack['segmentation'] == 12).astype(numpy.uint32),
+        "output/pics/rails_segmentation" + "_{:05d}.png",
+        write_fn=kb.write_palette_png,
+        max_write_threads=6,
+        # palette=palette,
+    )
     kb.file_io.write_json(filename="output/pics/camera.json", data=kb.get_camera_info(scene.camera))
     kb.file_io.write_json(filename="output/pics/metadata.json", data=kb.get_scene_metadata(scene))
     kb.file_io.write_json(filename="output/pics/object.json", data=kb.get_instance_info(scene))
