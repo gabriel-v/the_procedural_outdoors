@@ -42,7 +42,7 @@ def load_buildings(scene, sat, apply_mod=False):
     import_object_from_file(
         scene,
         'buildings',
-        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("models/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Areas:building',
         shrinkwrap_to_planes=[s.name for s in sat.values()],
         segmentation_id=settings.SEGMENTATION_IDS['building'],
@@ -85,7 +85,7 @@ def make_sat(scene):
             log.warning('skipping zoom level %s because errors', zoom)
             continue
         newname = 'sat_' + str(zoom)
-        oldpath = pathlib.Path(f"/data/predeal1/google/tren/{zoom}/google-{zoom}-tren.blend")
+        oldpath = pathlib.Path(f"models/predeal1/google/tren/{zoom}/google-{zoom}-tren.blend")
         sat[zoom] = import_object_from_file(
             scene, newname, oldpath, GOOGLE_SAT_OBJNAME,
             convert_to_mesh=True, add_bbox=True,
@@ -194,7 +194,7 @@ def import_paths(scene, sat):
     import_object_from_file(
         scene,
         'roads',
-        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("models/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:highway',
         convert_to_curve=True,
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
@@ -205,7 +205,7 @@ def import_paths(scene, sat):
     import_object_from_file(
         scene,
         'rails',
-        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("models/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         convert_to_curve=True,
@@ -215,7 +215,7 @@ def import_paths(scene, sat):
 
 def load_lowpoly_vegetation(veg_type):
     log.info('making lowpoly trees...')
-    LOWPOLY_VEG_FILE = '/data/trees/turbosquid-shapepspark-lowpoly/shapespark-low-poly-plants-kit.blend'  # noqa
+    LOWPOLY_VEG_FILE = 'models/trees/turbosquid-shapepspark-lowpoly/shapespark-low-poly-plants-kit.blend'  # noqa
     LOWPOLY_OBJECT_NAMES = {
         "trees": [
             "Tree-01-1",
@@ -275,7 +275,7 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
     tree_types = {
         "trees": {
             "id": 1,
-            "scale": 2.2,
+            "scale": 1.5,
             "dist_min": 14,
             "density_max": 0.4,
             "density_factor": 0.13,
@@ -389,7 +389,7 @@ def load_props(scene):
         import_object_from_file(
             scene,
             'prop_train_sign_blank',
-            pathlib.Path("output/powerlines/really-good/train-sign-blank.blend"),
+            pathlib.Path("models/powerlines/really-good/train-sign-blank.blend"),
             'train-sign-blank',
         )
         # fix damn scaling bug
@@ -399,7 +399,7 @@ def load_props(scene):
         import_object_from_file(
             scene,
             'prop_street_sign_blank',
-            pathlib.Path("output/powerlines/good/street-road-signs-blank.blend"),
+            pathlib.Path("models/powerlines/good/street-road-signs-blank.blend"),
             'round-sign',
         )
         # with make_active_object('prop_street_sign_blank') as _:
@@ -408,14 +408,14 @@ def load_props(scene):
         import_object_from_file(
             scene,
             'prop_steet_light',
-            pathlib.Path("output/powerlines/good/street-light-pole.blend"),
+            pathlib.Path("models/powerlines/good/street-light-pole.blend"),
             'street-light',
         )
 
         import_object_from_file(
             scene,
             'prop_steet_power_line',
-            pathlib.Path("output/powerlines/good/street-pole-power-line.blend"),
+            pathlib.Path("models/powerlines/good/street-pole-power-line.blend"),
             'tower1',
         )
         # with make_active_object('prop_steet_power_line') as _:
@@ -473,7 +473,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
     import_object_from_file(
         scene,
         'rails_center',
-        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("models/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
@@ -486,7 +486,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
     import_object_from_file(
         scene,
         'rails_tracks_object',
-        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("models/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
@@ -503,7 +503,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
     import_object_from_file(
         scene,
         'rails_planks_object',
-        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("models/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
@@ -523,7 +523,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
     import_object_from_file(
         scene,
         'props_rails_signs',
-        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("models/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:railway',
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
@@ -544,7 +544,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
     import_object_from_file(
         scene,
         'props_road_signals',
-        pathlib.Path("/data/predeal1/google/tren/15-single-object/google-15-tren.blend"),
+        pathlib.Path("models/predeal1/google/tren/15-single-object/google-15-tren.blend"),
         'Ways:highway',
         subsurf_levels=PATHS_INIT_SUBSURF_LEVELS,
         # convert_to_curve=True,
@@ -591,6 +591,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
         with make_active_object(sat[zoom].name) as sat_obj:
             sat_obj.vertex_groups.new(name='rails_prox')
             sat_obj.vertex_groups.new(name='roads_prox')
+            # sat_obj.vertex_groups.new(name='roads_prox_small')
             sat_obj.vertex_groups.new(name='buildings_prox')
             sat_obj.vertex_groups.new(name="map_UV_1m")
             new_geometry_modifier(

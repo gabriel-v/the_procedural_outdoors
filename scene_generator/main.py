@@ -48,6 +48,15 @@ def update_sky_texture(sky_texture='P', camera=None):
         bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].dust_density = random.uniform(0.1, 1.)
         bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].ozone_density = random.uniform(0.2, 6)
 
+    # thickness and spread
+    bpy.data.materials["procedural_clouds_shader"].node_tree.nodes["Group"].inputs[4].default_value = \
+        random.uniform(0.05, 0.21)
+    bpy.data.materials["procedural_clouds_shader"].node_tree.nodes["Group"].inputs[5].default_value = \
+        random.uniform(0.05, 0.18)
+    # seed
+    bpy.data.materials["procedural_clouds_shader"].node_tree.nodes["Group"].inputs[0].default_value = \
+        random.uniform(0.01, 0.99)
+
 
 def render_main():
     CUBE_BG = "cube/background.blend"
@@ -97,7 +106,7 @@ def render_main():
     log.info('creating keyframes...')
     anim_distance = (settings.MAX_FRAMES / settings.SIMULATION_FPS) * settings.CAMERA_ANIMATION_SPEED_M_S
     anim_distance *= 2
-    anim_distance += 300
+    anim_distance += 500
     animation_path = 'rails_center'
     with make_active_object(animation_path):
         path_vertices = [
@@ -146,44 +155,49 @@ def render_main():
     path_point = path_point.interpolate(method='linear', limit_area='inside')
     path_point = [tuple(t[1]) for t in path_point.iterrows()]
     assert len(path_point) > settings.MAX_FRAMES + 40
-    path_mid_idx_offset = int((len(path_point) - settings.MAX_FRAMES) / 2 + 15)
 
     cube_height = 1
-    camera_height = 2
-    camera_distance = 20
+    camera_height = 8
+    camera_distance = 45
     camera_delay_count = int(
         camera_distance / (
             settings.CAMERA_ANIMATION_SPEED_M_S / settings.SIMULATION_FPS
         )
     )
-    log.info('animation camera delay steps = %s', camera_delay_count)
-    if camera_delay_count > path_mid_idx_offset:
-        log.warning('not enough space in path for camera delay!')
-        camera_delay_count = path_mid_idx_offset
-    if camera_delay_count < 1:
-        log.warning('zero delay count! reset to 1')
-        camera_delay_count = 1
+    log.info('animation camera delay count = %s', camera_delay_count)
+    log.info('total point count = %s', len(path_point))
+    idx_buffer = 30
+    frame_jump_multiplier = int(((len(path_point) - camera_delay_count - idx_buffer * 3)
+                                / settings.MAX_FRAMES) * 0.9)  # noqa
+    assert frame_jump_multiplier >= 1
+    log.info('frame jump multiplier = %s', frame_jump_multiplier)
+
+    # --- render (and save the blender file)
+    update_sky_texture('N', camera)
+    save_blend(renderer, pack=True)
+    subprocess.check_call('rm -rf output/pics/ || true', shell=True)
+    os.makedirs('output/pics/segmentation', exist_ok=True)
 
     for frame in range(scene.frame_start, scene.frame_end + 1):
         # path coords for frame
-        x0, y0, z0 = path_point[frame + path_mid_idx_offset - camera_delay_count]
-        x, y, z = path_point[frame + path_mid_idx_offset]
-        x1, y1, z1 = path_point[frame + path_mid_idx_offset + 1]
+        log.info('frame = %s', frame)
+        idx_cam = idx_buffer + frame_jump_multiplier * frame
+        x0, y0, z0 = path_point[idx_cam]
+        x, y, z = path_point[idx_cam + camera_delay_count]
 
         z0 += camera_height
         z += camera_height / 2.7
         z += cube_height
-        z1 += cube_height
 
         # scene look randomization
-        RANDOM_AMOUNT = 4
+        RANDOM_AMOUNT = 8
         x0 += random.uniform(-RANDOM_AMOUNT, RANDOM_AMOUNT)
         y0 += random.uniform(-RANDOM_AMOUNT, RANDOM_AMOUNT)
         z0 += random.uniform(0, RANDOM_AMOUNT / 2)
 
         x += random.uniform(-RANDOM_AMOUNT / 2, RANDOM_AMOUNT / 2)
         y += random.uniform(-RANDOM_AMOUNT / 2, RANDOM_AMOUNT / 2)
-        z += random.uniform(-1, 1)
+        z += random.uniform(0, RANDOM_AMOUNT / 3)
 
         scene.camera.position = (x0, y0, z0)
         scene.camera.look_at((x, y, z))
@@ -191,69 +205,56 @@ def render_main():
         scene.camera.keyframe_insert("position", frame)
         scene.camera.keyframe_insert("quaternion", frame)
 
-        # cube.position = (x, y, z)
-        # cube.look_at((x1, y1, z1))
-        # cube.keyframe_insert("position", frame)
-        # cube.keyframe_insert("quaternion", frame)
+        update_sky_texture('N', camera)
 
-        # cube_light.position = (x + random.uniform(-0.1, 0.1),
-        #                        y + random.uniform(-0.1, 0.1),
-        #                        z + random.uniform(-0.1, 0.1))
-        # cube_light.keyframe_insert("position", frame)
+        # render and post-process
+        log.info('starting render....')
+        t0 = time.time()
+        data_stack = renderer.render(
+            frames=[frame],
+            return_layers=(
+                "rgba", "depth", "segmentation", "normal",
+            ),
+        )
+        t1 = time.time()
+        dt = round((t1 - t0), 2)
+        log.info(f""" render done! {dt} sec/frame
+                ==============================
+                =                            =
+                =         RENDER SPEED       =
+                =          {dt}           =
+                =          sec/frame         =
+                =                            =
+                ==============================
+                """)
 
-    update_sky_texture('N', camera)
-    # --- render (and save the blender file)
-    save_blend(renderer, pack=True)
+        log.info('started post-processing...')
+        # --- Postprocessing
+        # kb.compute_visibility(data_stack["segmentation"], scene.assets)
+        # data_stack["segmentation-2"] = kb.adjust_segmentation_idxs(
+        #     data_stack["segmentation"],
+        #     scene.assets,
+        #     scene.assets)
 
-# render and post-process
-    log.info('starting render....')
-    t0 = time.time()
-    data_stack = renderer.render(
-        return_layers=(
-            "rgba", "depth", "segmentation", "normal",
-        ),
-    )
-    t1 = time.time()
-    dt = round((t1 - t0) / settings.MAX_FRAMES, 2)
-    log.info(f""" render done! {dt} sec/frame
-             ==============================
-             =                            =
-             =         RENDER SPEED       =
-             =          {dt}           =
-             =          sec/frame         =
-             =                            =
-             ==============================
-             """)
+        log.info('started output...')
 
-    log.info('started post-processing...')
-    # --- Postprocessing
-    # kb.compute_visibility(data_stack["segmentation"], scene.assets)
-    # data_stack["segmentation-2"] = kb.adjust_segmentation_idxs(
-    #     data_stack["segmentation"],
-    #     scene.assets,
-    #     scene.assets)
-
-    log.info('started output...')
-
-    subprocess.check_call('rm -rf output/pics/ || true', shell=True)
-    os.makedirs('output/pics/segmentation', exist_ok=True)
-    kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
-    for i in range(0, data_stack['segmentation'].max()):
-        # palette = [[0, 0, 0], [255, 255, 255]]
+        kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
+        for i in range(0, data_stack['segmentation'].max()):
+            # palette = [[0, 0, 0], [255, 255, 255]]
+            kb.file_io.multi_write_image(
+                (data_stack['segmentation'] == i).astype(numpy.uint32),
+                "output/pics/segmentation/item_" + str(i) + "_{:05d}.png",
+                write_fn=kb.write_palette_png,
+                max_write_threads=6,
+                # palette=palette,
+            )
         kb.file_io.multi_write_image(
-            (data_stack['segmentation'] == i).astype(numpy.uint32),
-            "output/pics/segmentation/item_" + str(i) + "_{:05d}.png",
+            (data_stack['segmentation'] == 12).astype(numpy.uint32),
+            "output/pics/rails_segmentation" + "_{:05d}.png",
             write_fn=kb.write_palette_png,
             max_write_threads=6,
             # palette=palette,
         )
-    kb.file_io.multi_write_image(
-        (data_stack['segmentation'] == 12).astype(numpy.uint32),
-        "output/pics/rails_segmentation" + "_{:05d}.png",
-        write_fn=kb.write_palette_png,
-        max_write_threads=6,
-        # palette=palette,
-    )
     kb.file_io.write_json(filename="output/pics/camera.json", data=kb.get_camera_info(scene.camera))
     kb.file_io.write_json(filename="output/pics/metadata.json", data=kb.get_scene_metadata(scene))
     kb.file_io.write_json(filename="output/pics/object.json", data=kb.get_instance_info(scene))
