@@ -41,7 +41,7 @@ def update_sky_texture(sky_texture='P', camera=None):
             bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].altitude = camera.position[2]
         bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[1].default_value = \
             random.uniform(0.2, 0.3)
-        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_intensity = random.uniform(0.4, 0.8)
+        bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_intensity = random.uniform(0.4, 0.7)
         bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_elevation = random.uniform(0.19, 1.4)
         bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].sun_rotation = random.uniform(-3.141, 3.141)
         bpy.data.worlds["World"].node_tree.nodes["Sky Texture"].air_density = random.uniform(0.2, 1.6)
@@ -95,7 +95,25 @@ def render_main():
 
     # ### TERRAIN ####
     # ================
-    terrain.make_terrain(scene, camera_obj, add_trees=True)
+    t0 = time.time()
+    terrain.make_terrain(scene, camera_obj,
+                         add_trees=settings.RENDER_TREES,
+                         add_buildings=settings.RENDER_BUILDINGS)
+    if not settings.RENDER_CLOUDS:
+        bpy.data.objects['clouds'].hide_render = True
+        bpy.data.objects['clouds'].hide_viewport = True
+    t1 = time.time()
+    dt = round((t1 - t0), 2)
+    log.info(f""" render done! {dt} sec/frame
+            =>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+            =                            =
+            =         TERRAIN SPEED       =
+            =          {dt}           =
+            =          sec         =
+            =                            =
+            =<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+            """)
+    _terrain_gen_time = dt
 
 # --- populate the scene with objects, lights, cameras
 # scene += kb.Cube(name="floor", scale=(10, 10, 0.1), position=(0, 0, -0.1))
@@ -167,9 +185,10 @@ def render_main():
     log.info('animation camera delay count = %s', camera_delay_count)
     log.info('total point count = %s', len(path_point))
     idx_buffer = 30
-    frame_jump_multiplier = int(((len(path_point) - camera_delay_count - idx_buffer * 3)
-                                / settings.MAX_FRAMES) * 0.9)  # noqa
-    assert frame_jump_multiplier >= 1
+    # frame_jump_multiplier = int(((len(path_point) - camera_delay_count - idx_buffer * 3)
+    #                             / settings.MAX_FRAMES) * 0.9)  # noqa
+    # assert frame_jump_multiplier >= 1
+    frame_jump_multiplier = 1
     log.info('frame jump multiplier = %s', frame_jump_multiplier)
 
     # --- render (and save the blender file)
@@ -218,6 +237,7 @@ def render_main():
         )
         t1 = time.time()
         dt = round((t1 - t0), 2)
+        _frame_render_time = dt
         log.info(f""" render done! {dt} sec/frame
                 ==============================
                 =                            =
@@ -265,6 +285,20 @@ def render_main():
                           stderr=subprocess.DEVNULL)
 
     kb.done()
+
+    print(f"""
+    ========================
+    RENDER_TREES     = {settings.RENDER_TREES}
+    RENDER_CLOUDS    = {settings.RENDER_CLOUDS}
+    RENDER_BUILDINGS = {settings.RENDER_BUILDINGS}
+
+    SCENE GEN TIME   = {_terrain_gen_time}
+    FRAME RENDER TIME= {_frame_render_time}
+
+    {settings.RENDER_TREES} & {settings.RENDER_CLOUDS} & {settings.RENDER_BUILDINGS} & {_terrain_gen_time} & {_frame_render_time} \\\\
+
+    ========================
+    """)  # noqa
 
 
 def main():

@@ -422,7 +422,7 @@ def load_props(scene):
         #     bpy.ops.transform.resize(value=(1, 0.024, 0.079), orient_type='GLOBAL')
 
 
-def make_terrain(scene, camera_obj, add_trees=False):
+def make_terrain(scene, camera_obj, add_trees=False, add_buildings=False):
     log.info('creating terrain...')
     load_props(scene)
     sat = make_sat(scene)
@@ -563,12 +563,14 @@ def make_terrain(scene, camera_obj, add_trees=False):
         }
     )
 
-    # apply buildings geometry node when loading, since we want adaptive subdivision
-    building_object = load_buildings(scene, sat, apply_mod=False)
-
-    # now that we have buildings, we can finalize terrain height with buildings
-    for zoom in keys:
-        geo_mods[zoom]['Input_9'] = bpy.data.objects[building_object.name]
+    if add_buildings:
+        # apply buildings geometry node when loading, since we want adaptive subdivision
+        building_object = load_buildings(scene, sat, apply_mod=False)
+        # now that we have buildings, we can finalize terrain height with buildings
+        for zoom in keys:
+            geo_mods[zoom]['Input_9'] = building_object
+    else:
+        building_object = None
 
     # apply all the sat geo mods from above
     for zoom in sat:
@@ -601,7 +603,7 @@ def make_terrain(scene, camera_obj, add_trees=False):
                 {
                     'Input_2': bpy.data.objects["rails"],
                     'Input_4': bpy.data.objects["roads"],
-                    'Input_6': bpy.data.objects["buildings"],
+                    'Input_6': building_object,
                     "Output_3_attribute_name": 'rails_prox',
                     "Output_5_attribute_name": 'roads_prox',
                     "Output_7_attribute_name": 'buildings_prox',

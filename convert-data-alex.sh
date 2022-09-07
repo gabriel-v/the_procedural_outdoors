@@ -13,6 +13,9 @@ for f in output/pics/rgba_*.png; do
     convert output/convert-alex/frames/$i.png -flop output/convert-alex/frames/$i-tmp.png
     mv output/convert-alex/frames/$i-tmp.png output/convert-alex/frames/$i.png
   fi
+
+  convert output/convert-alex/frames/$i.png -auto-gamma output/convert-alex/frames/$i-tmp.png
+  mv output/convert-alex/frames/$i-tmp.png output/convert-alex/frames/$i.png
   i=$((i+1))
 done
 
