@@ -7,9 +7,13 @@ class SceneGeneratorInterface(ABC):
         pass
 
     @abstractmethod
-    def init_scene_parameters(self, scene):
+    def init_scene_parameters(self, scene, renderer):
         pass
 
     @abstractmethod
     def frame_callback(self, scene, render_data=None):
+        pass
+
+    @abstractmethod
+    def render(self, scene, renderer):
         pass
