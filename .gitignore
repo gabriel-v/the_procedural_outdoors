@@ -2,3 +2,4 @@
 /assets_output
 __pycache__
 .docker-tmp
+/demo_output

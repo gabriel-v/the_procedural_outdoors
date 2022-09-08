@@ -57,18 +57,21 @@ PARAMS = {
     },
 
     'cloud_thickness': {
-        'min': 0.05,
+        'min': 0.01,
         'max': 0.35,
+        'def': 0.19,
     },
 
     'cloud_spread': {
-        'min': 0.05,
-        'max': 0.32,
+        'min': 0.01,
+        'max': 0.35,
+        'def': 0.19,
     },
 
     'cloud_seed': {
         'min': 0.1234,
-        'max': 0.1235,
+        'max': 0.1236,
+        'def': 0.2,
     },
 }
 
