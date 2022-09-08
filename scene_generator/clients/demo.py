@@ -25,20 +25,21 @@ from ..interface import SceneGeneratorInterface
 PARAMS = {
     'sky_alt': {
         'min': 100,
-        'max': 3500,
+        'max': 6000,
+        'def': 1200,
     },
     'sky_illum': {
         'min': 0.2,
-        'max': 0.35,
+        'max': 0.32,
     },
     'sky_sum_int': {
         'min': 0.4,
-        'max': 0.8,
+        'max': 1.0,
     },
     'sky_sun_elev': {
         'min': 0.2,
         'max': 1.4,
-        'def': 0.45,
+        'def': 0.35,
     },
     'sky_sun_rot': {
         'min': -3,
@@ -47,19 +48,19 @@ PARAMS = {
     },
     'sky_air_density': {
         'min': 0.2,
-        'max': 1.6,
+        'max': 9.6,
     },
     'sky_dust_density': {
         'min': 0.1,
-        'max': 1.0,
+        'max': 8.0,
     },
     'sky_ozone': {
         'min': 0.2,
-        'max': 6.0,
+        'max': 8.0,
     },
     'cloud_thickness': {
         'min': 0.01,
-        'max': 0.29,
+        'max': 0.28,
     },
     'cloud_spread': {
         'min': 0.01,
@@ -178,13 +179,11 @@ class DemoClient(SceneGeneratorInterface):
             path_point,
             settings.CAMERA_ANIMATION_SPEED_M_S / settings.SIMULATION_FPS))
         path_point = path_point.interpolate(method='linear', limit_area='inside')
-        path_point = [tuple(t[1]) for t in path_point.iterrows()]
+        path_point = [tuple(t[1]) for t in path_point.iterrows()][::-1]
 
         cube_height = 1
         camera_height = 12
         camera_distance = 45
-        camera_twist_max = 10
-        camera_height_twist_max = 6
         camera_delay_count = int(
             camera_distance / (
                 settings.CAMERA_ANIMATION_SPEED_M_S / settings.SIMULATION_FPS
@@ -201,10 +200,13 @@ class DemoClient(SceneGeneratorInterface):
 
         # --- render (and save the blender file)
         update_sky_texture(scene.camera, self.param_key, 0)
+        camera_twist_max = 1
+        camera_height_twist_max = 0.8
         for frame in range(scene.frame_start, scene.frame_end + 1):
             frame_float = frame / scene.frame_end
-            camera_height_twist_frame = math.sin(frame_float * math.pi * 2) * camera_height_twist_max
-            camera_twist_frame = math.cos(frame_float * math.pi * 2) * camera_twist_max
+            camera_height_twist_frame = math.cos(frame_float * math.pi * 2) * camera_height_twist_max
+            camera_twist_frame_x = math.cos(frame_float * math.pi * 2) * camera_twist_max
+            camera_twist_frame_y = math.sin(frame_float * math.pi * 2) * camera_twist_max
 
             # path coords for frame
             log.info('frame = %s', frame)
@@ -216,12 +218,12 @@ class DemoClient(SceneGeneratorInterface):
             z += camera_height / 2.7
             z += cube_height
 
-            x += camera_twist_frame
-            y += camera_twist_frame
+            x += camera_twist_frame_x
+            y += camera_twist_frame_y
             z += camera_height_twist_frame / 2
 
-            x0 -= camera_twist_frame
-            y0 -= camera_twist_frame
+            x0 -= camera_twist_frame_x
+            y0 -= camera_twist_frame_y
             z0 += camera_height_twist_frame
 
             scene.camera.position = (x0, y0, z0)

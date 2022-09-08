@@ -1,7 +1,9 @@
 #!/bin/bash -ex
-start=`date +%s`
+mkdir -p output
+mkdir -p demo_output
 
-./shell bash in-container.sh 2>&1 | tee output/logs.txt
+start=`date +%s`
+( ./shell bash in-container.sh ) 2>&1 | tee output/logs.txt
 end=`date +%s`
 runtime=$((end-start))
 

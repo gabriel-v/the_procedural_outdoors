@@ -14,6 +14,14 @@ for x in $(echo sky_alt cloud_seed  sky_illum sky_sum_int \
         echo "FOLDER EXISTS, SKIPPING: demo_output/$x"
         continue
     fi
+    echo " ################################## "
+    echo " #                                # "
+    echo " #                                # "
+    echo " #   PARAM RUNNING:  $x           # "
+    echo " #                                # "
+    echo " #                                # "
+    echo " ################################## "
+    echo "$x" > output/params
     time python3 worker.py $x
     mkdir -p demo_output/$x
     mv output/* demo_output/$x
