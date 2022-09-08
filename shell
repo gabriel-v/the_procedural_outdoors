@@ -8,7 +8,7 @@ SHMEM=10g
 # docker build . --tag $DOCKER_IMAGE
 # docker pull $DOCKER_IMAGE
 
-mkdir -p .docker.tmp
+mkdir -p .docker-tmp
 docker run --rm -it  \
              -e KUBRIC_USE_GPU=t \
             --user $(id -u):$(id -g) \
