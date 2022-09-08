@@ -29,19 +29,21 @@ PARAMS = {
     },
     'sky_illum': {
         'min': 0.2,
-        'max': 0.3,
+        'max': 0.35,
     },
     'sky_sum_int': {
         'min': 0.4,
-        'max': 0.7,
+        'max': 0.8,
     },
     'sky_sun_elev': {
         'min': 0.2,
         'max': 1.4,
+        'def': 0.45,
     },
     'sky_sun_rot': {
         'min': -3,
         'max': 3,
+        'def': -1,
     },
     'sky_air_density': {
         'min': 0.2,
@@ -55,23 +57,17 @@ PARAMS = {
         'min': 0.2,
         'max': 6.0,
     },
-
     'cloud_thickness': {
         'min': 0.01,
-        'max': 0.35,
-        'def': 0.19,
+        'max': 0.29,
     },
-
     'cloud_spread': {
         'min': 0.01,
-        'max': 0.35,
-        'def': 0.19,
+        'max': 0.29,
     },
-
     'cloud_seed': {
         'min': 0.1234,
         'max': 0.1236,
-        'def': 0.2,
     },
 }
 
@@ -185,8 +181,10 @@ class DemoClient(SceneGeneratorInterface):
         path_point = [tuple(t[1]) for t in path_point.iterrows()]
 
         cube_height = 1
-        camera_height = 6
+        camera_height = 12
         camera_distance = 45
+        camera_twist_max = 10
+        camera_height_twist_max = 6
         camera_delay_count = int(
             camera_distance / (
                 settings.CAMERA_ANIMATION_SPEED_M_S / settings.SIMULATION_FPS
@@ -204,6 +202,10 @@ class DemoClient(SceneGeneratorInterface):
         # --- render (and save the blender file)
         update_sky_texture(scene.camera, self.param_key, 0)
         for frame in range(scene.frame_start, scene.frame_end + 1):
+            frame_float = frame / scene.frame_end
+            camera_height_twist_frame = math.sin(frame_float * math.pi * 2) * camera_height_twist_max
+            camera_twist_frame = math.cos(frame_float * math.pi * 2) * camera_twist_max
+
             # path coords for frame
             log.info('frame = %s', frame)
             idx_cam = idx_buffer + frame
@@ -213,6 +215,14 @@ class DemoClient(SceneGeneratorInterface):
             z0 += camera_height
             z += camera_height / 2.7
             z += cube_height
+
+            x += camera_twist_frame
+            y += camera_twist_frame
+            z += camera_height_twist_frame / 2
+
+            x0 -= camera_twist_frame
+            y0 -= camera_twist_frame
+            z0 += camera_height_twist_frame
 
             scene.camera.position = (x0, y0, z0)
             scene.camera.look_at((x, y, z))

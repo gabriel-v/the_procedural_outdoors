@@ -7,12 +7,15 @@
 ### NVIDIA GPU
 
 - install debian, nvidia proprietary driver, nvidia-docker, and CUDA 11-6
+- run `sudo ./magic-nvidia-script.sh` once per boot, if needed
 - run `./r`
+- wait 24h
 
 ### CPU
 
 - delete the `-e KUBRIC_USE_GPU=t \` line from `shell` script
 - run `./r`
+- wait 36h
 
 
 ## Vendorized code
