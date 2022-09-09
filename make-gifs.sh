@@ -7,10 +7,19 @@ echo "start montage, gif, video....."
 mkdir -p output/gif
 mkdir -p output/vid
 
+for x in $(ls output/pics); do
+	if [ -d output/pics/$x ] && [[ $x == 0* ]]; then
+		for y in depth  normal  rgba  segmentation; do
+			cp output/pics/$x/${y}_00000.png output/pics/${y}_${x}.png
+		done
+		# rmdir output/pics/$x
+	fi
+done
+
 
 ls output/pics/rgba_* | grep rgba_ | cut -d_ -f2 | cut -d. -f1 | \
 	xargs -I{} -n1 -P8 --verbose \
-	montage -font DejaVu-Sans-Mono -label %t -tile 2x3 -geometry 480x270 \
+	montage -font DejaVu-Sans-Mono -label %t -tile 2x2 -geometry 480x270 \
 	output/pics/*_{}.png output/pics/concat_{}.png
 
 echo "montage done"
