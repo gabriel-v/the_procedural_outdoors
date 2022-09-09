@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
-DELAY=6
-FRAMERATE=16
+DELAY=4
+FRAMERATE=24
 
 echo "start montage, gif, video....."
 mkdir -p output/gif
