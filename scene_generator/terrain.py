@@ -276,9 +276,9 @@ def make_trees(scene, camera_obj, sat, roads, rails, buildings, load_highpoly=Fa
         "trees": {
             "id": 1,
             "scale": 1.5,
-            "dist_min": 7,
+            "dist_min": 9,
             "density_max": 0.4,
-            "density_factor": 0.15,
+            "density_factor": 0.14,
             "collection": trees_collection,
         },
         "bushes": {
