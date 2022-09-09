@@ -10,7 +10,7 @@
 
 ### NVIDIA GPU
 
-- nvidia proprietary driver, nvidia-docker, and CUDA 11-6
+- install nvidia proprietary driver >= v510, nvidia-docker, and CUDA >= v11-6
 - run `sudo ./magic-nvidia-script.sh` once per boot, if needed
 - run `./r`
 - watch things appear in the `output` and `demo_output` folders
