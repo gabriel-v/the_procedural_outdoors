@@ -268,7 +268,9 @@ class DemoClient(SceneGeneratorInterface):
 
             log.info('started output...')
 
-            kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
+            os.makedirs('output/pics/segmentation', exist_ok=True)
+            os.makedirs(f"output/pics/{frame:06d}/", exist_ok=True)
+            kb.write_image_dict(data_stack, kb.as_path(f"output/pics/{frame:06d}/"))
 
     def frame_callback(self, scene, render_data=None):
         pass
