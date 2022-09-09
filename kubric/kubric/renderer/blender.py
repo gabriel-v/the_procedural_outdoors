@@ -272,6 +272,7 @@ class Blender(core.View):
         - "object_coordinates": shape = (nr_frames, height, width, 3) (uint16)
         - "normal": shape = (nr_frames, height, width, 3) (uint16)
     """
+    self.scratch_dir = tempfile.mkdtemp()
     logger.info("Using scratch rendering folder: '%s'", self.scratch_dir)
     if not ignore_missing_textures:
       self._check_missing_textures()

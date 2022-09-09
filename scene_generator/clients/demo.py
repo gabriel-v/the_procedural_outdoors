@@ -48,23 +48,28 @@ PARAMS = {
     },
     'sky_air_density': {
         'min': 0.2,
-        'max': 9.6,
+        'max': 6.6,
+        'def': 0.8,
     },
     'sky_dust_density': {
         'min': 0.1,
         'max': 8.0,
+        'def': 0.6,
     },
     'sky_ozone': {
         'min': 0.2,
         'max': 8.0,
+        'def': 2.9,
     },
     'cloud_thickness': {
         'min': 0.01,
-        'max': 0.28,
+        'max': 0.39,
+        'def': 0.15,
     },
     'cloud_spread': {
         'min': 0.01,
-        'max': 0.29,
+        'max': 0.39,
+        'def': 0.15,
     },
     'cloud_seed': {
         'min': 0.1234,
@@ -200,8 +205,8 @@ class DemoClient(SceneGeneratorInterface):
 
         # --- render (and save the blender file)
         update_sky_texture(scene.camera, self.param_key, 0)
-        camera_twist_max = 1
-        camera_height_twist_max = 0.8
+        camera_twist_max = 0.1
+        camera_height_twist_max = 0.08
         for frame in range(scene.frame_start, scene.frame_end + 1):
             frame_float = frame / scene.frame_end
             camera_height_twist_frame = math.cos(frame_float * math.pi * 2) * camera_height_twist_max
@@ -251,7 +256,6 @@ class DemoClient(SceneGeneratorInterface):
             )
             t1 = time.time()
             dt = round((t1 - t0), 2)
-            _frame_render_time = dt
             log.info(f""" render done! {dt} sec/frame
                     ==============================
                     =                            =
@@ -264,10 +268,7 @@ class DemoClient(SceneGeneratorInterface):
 
             log.info('started output...')
 
-            if frame < scene.frame_start + 10 or frame % 10 == 0:
-                kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
-
-        kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
+            kb.write_image_dict(data_stack, kb.as_path("output/pics/"), max_write_threads=6)
 
     def frame_callback(self, scene, render_data=None):
         pass
