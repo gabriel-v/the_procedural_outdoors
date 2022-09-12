@@ -1,5 +1,7 @@
 # The Procedural Outdoors
 
+![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/demo/rgba.gif)
+
 ![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/v1-bush/frames/895.png)
 
 ## How to
