@@ -1,5 +1,7 @@
 # The Procedural Outdoors
 
+![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/demo/ezgif-5-3cd5acf22e.gif)
+
 ![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/demo/rgba.gif)
 
 ![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/v1-bush/frames/895.png)
@@ -7,6 +9,8 @@
 Thesis: https://github.com/gabriel-v/the_procedural_outdoors/raw/e7e11bc7782a7a2ed4bfbc96afb00a468a030618/licenta2022__text-1.pdf
 
 Generated Dataset: https://github.com/gabriel-v/all-tracks-no-trains
+
+---
 
 ## How to
 
@@ -29,6 +33,7 @@ Generated Dataset: https://github.com/gabriel-v/all-tracks-no-trains
 - watch things appear in the `output` and `demo_output` folders
 - wait 36h
 
+---
 
 ## Vendorized code
 
