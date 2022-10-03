@@ -5,6 +5,9 @@
 ![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/demo/rgba.gif)
 
 ![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/v1-bush/frames/895.png)
+![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/v1-bush/ground_truths/895.png)
+
+---
 
 ## Thesis, Dataset
 
