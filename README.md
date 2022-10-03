@@ -4,7 +4,9 @@
 
 ![](https://github.com/gabriel-v/all-tracks-no-trains/raw/main/v1-bush/frames/895.png)
 
-Dataset: https://github.com/gabriel-v/all-tracks-no-trains
+Thesis: https://github.com/gabriel-v/the_procedural_outdoors/raw/e7e11bc7782a7a2ed4bfbc96afb00a468a030618/licenta2022__text-1.pdf
+
+Generated Dataset: https://github.com/gabriel-v/all-tracks-no-trains
 
 ## How to
 
